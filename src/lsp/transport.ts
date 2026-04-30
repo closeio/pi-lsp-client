@@ -37,12 +37,12 @@ export class LspClientTransport {
 			...process.env,
 			...this.server.env,
 		};
-		const pathValue = process.platform === "win32" ? (env["PATH"] ?? env["Path"] ?? "") : (env["PATH"] ?? "");
+		const pathValue = process.platform === "win32" ? (env.PATH ?? env.Path ?? "") : (env.PATH ?? "");
 		const spawnPath = [pathValue, ...getAdditionalPathBases(this.root)].filter(Boolean).join(delimiter);
-		if (process.platform === "win32" && env["Path"] !== undefined) {
-			env["Path"] = spawnPath;
+		if (process.platform === "win32" && env.Path !== undefined) {
+			env.Path = spawnPath;
 		}
-		env["PATH"] = spawnPath;
+		env.PATH = spawnPath;
 
 		this.proc = spawnProcess(this.server.command, {
 			cwd: this.root,

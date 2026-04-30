@@ -13,7 +13,7 @@ describe("BUILTIN_SERVERS", () => {
 
 	it("#given typescript #when looking it up #then exposes command and extensions", () => {
 		// given
-		const ts = BUILTIN_SERVERS["typescript"];
+		const ts = BUILTIN_SERVERS.typescript;
 
 		// when / then
 		expect(ts).toBeDefined();
@@ -24,7 +24,7 @@ describe("BUILTIN_SERVERS", () => {
 
 	it("#given rust #when looking it up #then maps to rust-analyzer", () => {
 		// given
-		const rust = BUILTIN_SERVERS["rust"];
+		const rust = BUILTIN_SERVERS.rust;
 
 		// when / then
 		expect(rust).toBeDefined();
@@ -47,7 +47,7 @@ describe("LSP_INSTALL_HINTS", () => {
 
 	it("#given typescript #when looking up hint #then mentions npm install", () => {
 		// given / when / then
-		expect(LSP_INSTALL_HINTS["typescript"]).toContain("npm install");
-		expect(LSP_INSTALL_HINTS["typescript"]).toContain("typescript-language-server");
+		expect(LSP_INSTALL_HINTS.typescript).toContain("npm install");
+		expect(LSP_INSTALL_HINTS.typescript).toContain("typescript-language-server");
 	});
 });
