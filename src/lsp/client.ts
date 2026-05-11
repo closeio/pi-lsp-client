@@ -24,7 +24,7 @@ export class LspClient extends LspClientConnection {
 			const languageId = getLanguageId(ext);
 			const version = 1;
 
-			this.sendNotification("textDocument/didOpen", {
+			await this.sendNotification("textDocument/didOpen", {
 				textDocument: {
 					uri,
 					languageId,
@@ -49,12 +49,12 @@ export class LspClient extends LspClientConnection {
 		this.documentVersions.set(uri, nextVersion);
 		this.lastSyncedText.set(uri, text);
 
-		this.sendNotification("textDocument/didChange", {
+		await this.sendNotification("textDocument/didChange", {
 			textDocument: { uri, version: nextVersion },
 			contentChanges: [{ text }],
 		});
 
-		this.sendNotification("textDocument/didSave", {
+		await this.sendNotification("textDocument/didSave", {
 			textDocument: { uri },
 			text,
 		});

@@ -102,6 +102,17 @@ export class LspClientTransport {
 		});
 	}
 
+	private isConnectionClosedError(error: unknown): error is Error {
+		if (!(error instanceof Error)) {
+			return false;
+		}
+		const code = "code" in error && typeof error.code === "string" ? error.code : undefined;
+		return (
+			code === "ERR_STREAM_DESTROYED" ||
+			/connection closed|connection is disposed|stream was destroyed/i.test(error.message)
+		);
+	}
+
 	protected sendRequest<T>(method: string): Promise<T>;
 	protected sendRequest<T>(method: string, params: unknown): Promise<T>;
 	protected async sendRequest<T>(method: string, ...args: [] | [unknown]): Promise<T> {
@@ -144,19 +155,26 @@ export class LspClientTransport {
 					this.stderrBuffer.slice(-10).join("\n") || undefined,
 				);
 			}
-			if (error instanceof Error && /connection closed|connection is disposed/i.test(error.message)) {
+			if (this.isConnectionClosedError(error)) {
 				throw new LspConnectionClosedError(this.server.id, this.root, error.message);
 			}
 			throw error;
 		}
 	}
 
-	protected sendNotification(method: string): void;
-	protected sendNotification(method: string, params: unknown): void;
-	protected sendNotification(method: string, ...args: [] | [unknown]): void {
+	protected sendNotification(method: string): Promise<void>;
+	protected sendNotification(method: string, params: unknown): Promise<void>;
+	protected async sendNotification(method: string, ...args: [] | [unknown]): Promise<void> {
 		if (!this.connection) return;
 		if (this.processExited || (this.proc && this.proc.exitCode !== null)) return;
-		(this.connection.sendNotification as (...a: unknown[]) => void)(method, ...args);
+		try {
+			await (this.connection.sendNotification as (...a: unknown[]) => Promise<void>)(method, ...args);
+		} catch (error) {
+			if (this.isConnectionClosedError(error)) {
+				throw new LspConnectionClosedError(this.server.id, this.root, error.message);
+			}
+			throw error;
+		}
 	}
 
 	isAlive(): boolean {
@@ -166,8 +184,10 @@ export class LspClientTransport {
 	async stop(): Promise<void> {
 		if (this.connection) {
 			try {
-				this.sendNotification("shutdown", {});
-				this.sendNotification("exit");
+				await this.sendNotification("shutdown", {});
+			} catch {}
+			try {
+				await this.sendNotification("exit");
 			} catch {}
 			try {
 				this.connection.dispose();
