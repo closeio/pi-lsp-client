@@ -1,9 +1,13 @@
 import { spawn } from "node:child_process";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@mariozechner/pi-coding-agent";
 
 import { LspInspectorComponent } from "./lsp/inspector.js";
 import { disposeDefaultLspManager, getLspManager } from "./lsp/manager.js";
-import { appendPostEditDiagnostics } from "./lsp/post-edit-diagnostics.js";
+import {
+	appendPostEditDiagnostics,
+	POST_EDIT_DIAGNOSTICS_WIDGET_KEY,
+	syncPostEditDiagnosticsWidget,
+} from "./lsp/post-edit-diagnostics.js";
 import {
 	renderDiagnosticsCall,
 	renderDiagnosticsResult,
@@ -32,11 +36,23 @@ import {
 import { type LspSymbolsDetails, lsp_symbols } from "./lsp/tools/symbols.js";
 
 const STATUS_KEY = "pi-lsp";
-const WIDGET_KEY = "pi-lsp";
 
 interface ResultLike<T> {
 	content: ReadonlyArray<{ type: string; text?: string }>;
 	details?: T;
+}
+
+export interface PostEditToolResultHandlerResult {
+	content?: ToolResultEvent["content"];
+}
+
+export type PostEditToolResultHandler = (
+	event: ToolResultEvent,
+	ctx: ExtensionContext,
+) => Promise<PostEditToolResultHandlerResult | undefined> | PostEditToolResultHandlerResult | undefined;
+
+export interface PostEditToolResultRegistrar {
+	on(event: "tool_result", handler: PostEditToolResultHandler): void;
 }
 
 /**
@@ -132,25 +148,11 @@ export default function (pi: ExtensionAPI): void {
 		updateStatus(ctx);
 	});
 
-	pi.on("tool_result", async (event, ctx) => {
-		return appendPostEditDiagnostics(event, async (filePath) => {
-			const result = await lsp_diagnostics.execute(
-				`${event.toolCallId}:post-edit-diagnostics:${filePath}`,
-				{ filePath, severity: "error" },
-				undefined,
-				undefined,
-				ctx,
-			);
-			return result.content
-				.filter((block) => block.type === "text")
-				.map((block) => block.text)
-				.join("\n");
-		});
-	});
+	registerPostEditDiagnosticsHook(pi);
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		ctx.ui.setStatus(STATUS_KEY, undefined);
-		ctx.ui.setWidget(WIDGET_KEY, undefined);
+		ctx.ui.setWidget(POST_EDIT_DIAGNOSTICS_WIDGET_KEY, undefined);
 		await disposeDefaultLspManager();
 	});
 
@@ -204,6 +206,31 @@ export default function (pi: ExtensionAPI): void {
 			});
 		},
 	});
+}
+
+export function registerPostEditDiagnosticsHook(pi: PostEditToolResultRegistrar): void {
+	pi.on("tool_result", handlePostEditDiagnosticsToolResult);
+}
+
+export async function handlePostEditDiagnosticsToolResult(
+	event: ToolResultEvent,
+	ctx: ExtensionContext,
+): Promise<PostEditToolResultHandlerResult | undefined> {
+	const result = await appendPostEditDiagnostics(event, async (filePath) => {
+		const result = await lsp_diagnostics.execute(
+			`${event.toolCallId}:post-edit-diagnostics:${filePath}`,
+			{ filePath, severity: "error" },
+			undefined,
+			undefined,
+			ctx,
+		);
+		return result.content
+			.filter((block) => block.type === "text")
+			.map((block) => block.text)
+			.join("\n");
+	});
+	syncPostEditDiagnosticsWidget((key, content, options) => ctx.ui.setWidget(key, content, options), result);
+	return result?.content ? { content: result.content } : undefined;
 }
 
 async function runInstall(id: string, ctx: ExtensionContext): Promise<void> {

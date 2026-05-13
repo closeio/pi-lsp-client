@@ -1,7 +1,15 @@
-import type { ToolResultEvent } from "@mariozechner/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import type { ExtensionContext, ToolResultEvent } from "@mariozechner/pi-coding-agent";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { appendPostEditDiagnostics } from "../src/lsp/post-edit-diagnostics.js";
+import { type PostEditToolResultHandler, registerPostEditDiagnosticsHook } from "../src/index.js";
+import { appendPostEditDiagnostics, syncPostEditDiagnosticsWidget } from "../src/lsp/post-edit-diagnostics.js";
+import { lsp_diagnostics } from "../src/lsp/tools/diagnostics.js";
+
+interface WidgetCall {
+	key: string;
+	content: string[] | undefined;
+	placement: "aboveEditor" | "belowEditor" | undefined;
+}
 
 function writeEvent(path: string): ToolResultEvent {
 	return {
@@ -39,7 +47,35 @@ function applyPatchEvent(paths: string[]): ToolResultEvent {
 	};
 }
 
+function captureToolResultHandler(): PostEditToolResultHandler {
+	let capturedHandler: PostEditToolResultHandler | undefined;
+	const pi = {
+		on(event: "tool_result", handler: PostEditToolResultHandler): void {
+			if (event === "tool_result") capturedHandler = handler;
+		},
+	};
+
+	registerPostEditDiagnosticsHook(pi);
+	if (!capturedHandler) throw new Error("Expected extension to register a tool_result handler");
+	return capturedHandler;
+}
+
+function extensionContextWithWidgetCalls(calls: WidgetCall[]): ExtensionContext {
+	return {
+		ui: {
+			setWidget(key, content, options): void {
+				if (typeof content === "function") throw new Error("Expected string widget content");
+				calls.push({ key, content, placement: options?.placement });
+			},
+		},
+	} as ExtensionContext;
+}
+
 describe("post-edit diagnostics", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
 	it("#given write tool result with diagnostics #when appending post-edit diagnostics #then adds LSP error block", async () => {
 		// given
 		const event = writeEvent("src/broken.ts");
@@ -60,9 +96,14 @@ describe("post-edit diagnostics", () => {
 					"error[typescript] (2322) at 1:13: Type 'number' is not assignable to type 'string'.",
 			},
 		]);
+		expect(result?.widgetLines).toEqual([
+			"LSP errors detected",
+			"src/broken.ts",
+			"  error[typescript] (2322) at 1:13: Type 'number' is not assignable to type 'string'.",
+		]);
 	});
 
-	it("#given edit tool result with no diagnostics #when appending post-edit diagnostics #then leaves content unchanged", async () => {
+	it("#given edit tool result with no diagnostics #when appending post-edit diagnostics #then requests widget clear", async () => {
 		// given
 		const event = editEvent("src/clean.ts");
 
@@ -70,7 +111,7 @@ describe("post-edit diagnostics", () => {
 		const result = await appendPostEditDiagnostics(event, async () => "No diagnostics found");
 
 		// then
-		expect(result).toBeUndefined();
+		expect(result).toEqual({ widgetLines: undefined });
 	});
 
 	it("#given apply_patch result with multiple files #when appending post-edit diagnostics #then adds one block per file with diagnostics", async () => {
@@ -92,6 +133,11 @@ describe("post-edit diagnostics", () => {
 					"\n\nLSP errors detected in src/b.ts, please fix:\n" +
 					"error[typescript] (2304) at 1:1: Cannot find name 'missing'.",
 			},
+		]);
+		expect(result?.widgetLines).toEqual([
+			"LSP errors detected",
+			"src/b.ts",
+			"  error[typescript] (2304) at 1:1: Cannot find name 'missing'.",
 		]);
 	});
 
@@ -118,7 +164,7 @@ describe("post-edit diagnostics", () => {
 		});
 
 		// then
-		expect(result?.content.at(-1)).toEqual({
+		expect(result?.content?.at(-1)).toEqual({
 			type: "text",
 			text:
 				"\n\nLSP errors detected in src/broken.ts, please fix:\n" +
@@ -137,5 +183,90 @@ describe("post-edit diagnostics", () => {
 
 		// then
 		expect(result).toBeUndefined();
+	});
+
+	it("#given post-edit diagnostics result #when syncing widget #then renders below editor", async () => {
+		// given
+		const event = writeEvent("src/broken.ts");
+		const result = await appendPostEditDiagnostics(event, async () => "error[typescript] at 1:1: broken");
+		const calls: Array<{ key: string; content: string[] | undefined; placement: string | undefined }> = [];
+
+		// when
+		syncPostEditDiagnosticsWidget((key, content, options) => {
+			calls.push({ key, content, placement: options?.placement });
+		}, result);
+
+		// then
+		expect(calls).toEqual([
+			{
+				key: "pi-lsp",
+				content: ["LSP errors detected", "src/broken.ts", "  error[typescript] at 1:1: broken"],
+				placement: "belowEditor",
+			},
+		]);
+	});
+
+	it("#given clean post-edit diagnostics result #when syncing widget #then clears stale widget", async () => {
+		// given
+		const event = writeEvent("src/clean.ts");
+		const result = await appendPostEditDiagnostics(event, async () => "No diagnostics found");
+		const calls: Array<{ key: string; content: string[] | undefined; placement: string | undefined }> = [];
+
+		// when
+		syncPostEditDiagnosticsWidget((key, content, options) => {
+			calls.push({ key, content, placement: options?.placement });
+		}, result);
+
+		// then
+		expect(calls).toEqual([{ key: "pi-lsp", content: undefined, placement: "belowEditor" }]);
+	});
+
+	it("#given registered extension #when write returns LSP errors #then shows widget and returns model-visible diagnostics", async () => {
+		// given
+		const handler = captureToolResultHandler();
+		const event = writeEvent("src/broken.ts");
+		const widgetCalls: WidgetCall[] = [];
+		const ctx = extensionContextWithWidgetCalls(widgetCalls);
+		const diagnostics = vi.spyOn(lsp_diagnostics, "execute").mockResolvedValue({
+			content: [{ type: "text", text: "error[typescript] (2322) at 1:13: broken" }],
+			details: {
+				filePath: "src/broken.ts",
+				severity: "error",
+				mode: "file",
+				diagnostics: [],
+				totalDiagnostics: 1,
+				truncated: false,
+			},
+		});
+
+		// when
+		const result = await handler(event, ctx);
+
+		// then
+		expect(diagnostics).toHaveBeenCalledWith(
+			"call-1:post-edit-diagnostics:src/broken.ts",
+			{ filePath: "src/broken.ts", severity: "error" },
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect(widgetCalls).toEqual([
+			{
+				key: "pi-lsp",
+				content: ["LSP errors detected", "src/broken.ts", "  error[typescript] (2322) at 1:13: broken"],
+				placement: "belowEditor",
+			},
+		]);
+		expect(result).toEqual({
+			content: [
+				{ type: "text", text: "Wrote file successfully." },
+				{
+					type: "text",
+					text:
+						"\n\nLSP errors detected in src/broken.ts, please fix:\n" +
+						"error[typescript] (2322) at 1:13: broken",
+				},
+			],
+		});
 	});
 });

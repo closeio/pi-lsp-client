@@ -4,28 +4,73 @@ export type DiagnosticsRunner = (filePath: string) => Promise<string>;
 
 const MUTATION_TOOL_NAMES = new Set(["write", "edit", "apply_patch"]);
 const CLEAN_DIAGNOSTICS_TEXT = "No diagnostics found";
+export const POST_EDIT_DIAGNOSTICS_WIDGET_KEY = "pi-lsp";
+
+type WidgetPlacement = "aboveEditor" | "belowEditor";
+type WidgetSetter = (key: string, content: string[] | undefined, options?: { placement?: WidgetPlacement }) => void;
+
+export interface PostEditDiagnosticsResult {
+	content?: ToolResultEvent["content"];
+	widgetLines: string[] | undefined;
+}
+
+interface DiagnosticBlock {
+	filePath: string;
+	diagnostics: string;
+}
 
 export async function appendPostEditDiagnostics(
 	event: ToolResultEvent,
 	runDiagnostics: DiagnosticsRunner,
-): Promise<{ content: ToolResultEvent["content"] } | undefined> {
+): Promise<PostEditDiagnosticsResult | undefined> {
 	if (event.isError || !MUTATION_TOOL_NAMES.has(event.toolName)) return undefined;
 
 	const filePaths = extractMutatedFilePaths(event);
 	if (filePaths.length === 0) return undefined;
 
-	const blocks: string[] = [];
+	const blocks: DiagnosticBlock[] = [];
 	for (const filePath of filePaths) {
 		const diagnostics = (await runDiagnostics(filePath)).trim();
 		if (diagnostics.length === 0 || diagnostics === CLEAN_DIAGNOSTICS_TEXT) continue;
-		blocks.push(`\n\nLSP errors detected in ${filePath}, please fix:\n${diagnostics}`);
+		blocks.push({ filePath, diagnostics });
 	}
 
-	if (blocks.length === 0) return undefined;
+	if (blocks.length === 0) {
+		return { widgetLines: undefined };
+	}
 
 	return {
-		content: [...event.content, ...blocks.map((text) => ({ type: "text" as const, text }))],
+		content: [
+			...event.content,
+			...blocks.map(({ filePath, diagnostics }) => ({
+				type: "text" as const,
+				text: `\n\nLSP errors detected in ${filePath}, please fix:\n${diagnostics}`,
+			})),
+		],
+		widgetLines: formatWidgetLines(blocks),
 	};
+}
+
+export function syncPostEditDiagnosticsWidget(
+	setWidget: WidgetSetter,
+	result: PostEditDiagnosticsResult | undefined,
+): void {
+	if (!result) return;
+	setWidget(POST_EDIT_DIAGNOSTICS_WIDGET_KEY, result.widgetLines, { placement: "belowEditor" });
+}
+
+function formatWidgetLines(blocks: DiagnosticBlock[]): string[] {
+	const lines = ["LSP errors detected"];
+	for (const block of blocks) {
+		lines.push(block.filePath);
+		for (const line of block.diagnostics.split("\n")) {
+			const trimmed = line.trim();
+			if (trimmed.length > 0) {
+				lines.push(`  ${trimmed}`);
+			}
+		}
+	}
+	return lines;
 }
 
 export function extractMutatedFilePaths(event: ToolResultEvent): string[] {
