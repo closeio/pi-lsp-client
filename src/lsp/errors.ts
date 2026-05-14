@@ -24,6 +24,40 @@ export class LspProcessExitedError extends Error {
 	}
 }
 
+export class LspRequestTimeoutError extends Error {
+	override readonly name = "LspRequestTimeoutError";
+
+	constructor(
+		readonly method: string,
+		readonly stderrTail?: string,
+	) {
+		const stderrSuffix = stderrTail ? `\nrecent stderr: ${stderrTail}` : "";
+		super(`LSP request timeout (method: ${method})${stderrSuffix}`);
+	}
+}
+
+export class LspInvalidPathError extends Error {
+	override readonly name = "LspInvalidPathError";
+}
+
+export class LspServerLookupError extends Error {
+	override readonly name = "LspServerLookupError";
+}
+
+export class LspServerInitializingError extends Error {
+	override readonly name = "LspServerInitializingError";
+
+	constructor(readonly originalError: LspRequestTimeoutError) {
+		super(
+			`LSP server is still initializing. Please retry in a few seconds. Original error: ${originalError.message}`,
+		);
+	}
+}
+
+export class LspProcessSpawnError extends Error {
+	override readonly name = "LspProcessSpawnError";
+}
+
 export function isLspDeadConnectionError(err: unknown): err is LspConnectionClosedError | LspProcessExitedError {
 	return err instanceof LspConnectionClosedError || err instanceof LspProcessExitedError;
 }

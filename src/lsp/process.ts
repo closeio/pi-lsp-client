@@ -1,6 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 
+import { LspInvalidPathError, LspProcessSpawnError } from "./errors.js";
+
 export interface SpawnedProcess {
 	stdin: NodeJS.WritableStream;
 	stdout: NodeJS.ReadableStream;
@@ -42,7 +44,7 @@ function wrap(proc: ChildProcess): SpawnedProcess {
 	});
 
 	if (!proc.stdin || !proc.stdout || !proc.stderr) {
-		throw new Error("Spawned process is missing one of stdin/stdout/stderr pipes");
+		throw new LspProcessSpawnError("Spawned process is missing one of stdin/stdout/stderr pipes");
 	}
 
 	return {
@@ -70,12 +72,12 @@ function wrap(proc: ChildProcess): SpawnedProcess {
 export function spawnProcess(command: string[], options: SpawnOptions): SpawnedProcess {
 	const cwdValidation = validateCwd(options.cwd);
 	if (!cwdValidation.valid) {
-		throw new Error(`[lsp] ${cwdValidation.error}`);
+		throw new LspInvalidPathError(`[lsp] ${cwdValidation.error}`);
 	}
 
 	const [cmd, ...args] = command;
 	if (!cmd) {
-		throw new Error("[lsp] empty command");
+		throw new LspProcessSpawnError("[lsp] empty command");
 	}
 
 	const proc = spawn(cmd, args, {

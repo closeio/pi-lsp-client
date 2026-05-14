@@ -9,6 +9,7 @@ import type { LspGotoDefinitionDetails } from "./tools/goto-definition.js";
 import type { LspPrepareRenameDetails, LspRenameDetails } from "./tools/rename.js";
 import type { LspSymbolsDetails } from "./tools/symbols.js";
 import type { Diagnostic, DocumentSymbol, Location, LocationLink, SymbolInfo } from "./types.js";
+import { shorten } from "./utils.js";
 
 const COLLAPSED_HEAD = 3;
 const EXPANDED_HEAD = 20;
@@ -43,11 +44,6 @@ interface RenameArgs extends PositionArgs {
 interface DiagnosticsArgs {
 	filePath: string;
 	severity?: string;
-}
-
-function shorten(s: string, max: number): string {
-	if (s.length <= max) return s;
-	return `${s.slice(0, max - 1)}…`;
 }
 
 function locText(loc: Location | LocationLink): string {
@@ -162,22 +158,21 @@ export function renderDiagnosticsResult(
 	if (counts.info > 0) badges.push(theme.fg("muted", `I:${counts.info}`));
 	if (counts.hint > 0) badges.push(theme.fg("dim", `H:${counts.hint}`));
 
-	const fileCount = unique(details.diagnostics, (d) => d.file).length;
+	const uniqueDiagnosticFiles = unique(details.diagnostics, (d) => d.file);
+	const fileCount = uniqueDiagnosticFiles.length;
 	const summary =
 		badges.join(" ") +
 		theme.fg("muted", ` • ${fileCount} file${fileCount === 1 ? "" : "s"}`) +
 		(details.truncated ? theme.fg("warning", " (truncated)") : "");
 
 	if (!options.expanded) {
-		const files = unique(details.diagnostics, (d) => d.file).slice(0, COLLAPSED_HEAD);
+		const files = uniqueDiagnosticFiles.slice(0, COLLAPSED_HEAD);
 		const lines: string[] = [summary];
 		for (const f of files) {
 			lines.push(theme.fg("muted", `  ${shorten(f.file, PATH_BUDGET)}`));
 		}
-		if (unique(details.diagnostics, (d) => d.file).length > COLLAPSED_HEAD) {
-			lines.push(
-				theme.fg("dim", `  … ${unique(details.diagnostics, (d) => d.file).length - COLLAPSED_HEAD} more files`),
-			);
+		if (uniqueDiagnosticFiles.length > COLLAPSED_HEAD) {
+			lines.push(theme.fg("dim", `  … ${uniqueDiagnosticFiles.length - COLLAPSED_HEAD} more files`));
 		}
 		return new Text(lines.join("\n"), 0, 0);
 	}
@@ -228,7 +223,10 @@ export function renderGotoDefinitionResult(
 	if (!details || details.locations.length === 0) {
 		return new Text(theme.fg("dim", "No definition found"), 0, 0);
 	}
-	const head = details.locations[0]!;
+	const [head] = details.locations;
+	if (!head) {
+		return new Text(theme.fg("dim", "No definition found"), 0, 0);
+	}
 	const more = details.locations.length - 1;
 	const headStr = theme.fg("success", "→ ") + theme.fg("accent", locText(head));
 	const tail = more > 0 ? theme.fg("dim", ` (+${more} more)`) : "";

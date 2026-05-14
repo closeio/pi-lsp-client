@@ -9,6 +9,7 @@ import { aggregateDiagnosticsForDirectory } from "../directory-diagnostics.js";
 import { filterDiagnosticsBySeverity, formatDiagnostic } from "../formatters.js";
 import { inferExtensionFromDirectory } from "../infer-extension.js";
 import type { Diagnostic, SeverityFilter } from "../types.js";
+import { handleMissingDependencyError } from "../utils.js";
 
 const Params = Type.Object({
 	filePath: Type.String({ description: "File or directory path to check diagnostics for" }),
@@ -122,9 +123,9 @@ export const lsp_diagnostics = defineTool({
 				details,
 			};
 		} catch (e) {
-			const message = e instanceof Error ? e.message : String(e);
+			const message = handleMissingDependencyError(e);
 
-			if (message.includes("NOT INSTALLED") || message.includes("No LSP server configured")) {
+			if (message) {
 				const details: LspDiagnosticsDetails = {
 					filePath: params.filePath,
 					severity: (params.severity as SeverityFilter | undefined) ?? "all",

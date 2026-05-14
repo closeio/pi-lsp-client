@@ -6,6 +6,7 @@ import { withLspClient } from "../client-wrapper.js";
 import { DEFAULT_MAX_SYMBOLS } from "../constants.js";
 import { formatDocumentSymbol, formatSymbolInfo } from "../formatters.js";
 import type { DocumentSymbol, SymbolInfo } from "../types.js";
+import { handleMissingDependencyError } from "../utils.js";
 
 const Params = Type.Object({
 	filePath: Type.String({ description: "File path used as LSP context" }),
@@ -15,6 +16,10 @@ const Params = Type.Object({
 	query: Type.Optional(Type.String({ description: "Symbol name to search (required for workspace scope)" })),
 	limit: Type.Optional(Type.Number({ description: "Max results (default: 200)" })),
 });
+
+function isDocumentSymbol(symbol: DocumentSymbol | SymbolInfo): symbol is DocumentSymbol {
+	return "range" in symbol;
+}
 
 export interface LspSymbolsDetails {
 	filePath: string;
@@ -64,7 +69,7 @@ export const lsp_symbols = defineTool({
 					{ signal },
 				);
 
-				const all = (Array.isArray(result) ? result : []) as SymbolInfo[];
+				const all = result;
 				const total = all.length;
 				const limit = Math.min(params.limit ?? DEFAULT_MAX_SYMBOLS, DEFAULT_MAX_SYMBOLS);
 				const truncated = total > limit;
@@ -109,7 +114,7 @@ export const lsp_symbols = defineTool({
 				{ signal },
 			);
 
-			const all = (Array.isArray(result) ? result : []) as Array<DocumentSymbol | SymbolInfo>;
+			const all = result;
 			const total = all.length;
 			const limit = Math.min(params.limit ?? DEFAULT_MAX_SYMBOLS, DEFAULT_MAX_SYMBOLS);
 			const truncated = total > limit;
@@ -133,11 +138,13 @@ export const lsp_symbols = defineTool({
 				lines.push(`Found ${total} symbols (showing first ${limit}):`);
 			}
 
-			const head = limited[0];
-			if (head && "range" in head) {
-				lines.push(...(limited as DocumentSymbol[]).map((s) => formatDocumentSymbol(s)));
+			const documentSymbols = limited.filter(isDocumentSymbol);
+			if (documentSymbols.length === limited.length) {
+				lines.push(...documentSymbols.map((s) => formatDocumentSymbol(s)));
 			} else {
-				lines.push(...(limited as SymbolInfo[]).map(formatSymbolInfo));
+				lines.push(
+					...limited.filter((symbol): symbol is SymbolInfo => !isDocumentSymbol(symbol)).map(formatSymbolInfo),
+				);
 			}
 
 			return {
@@ -151,8 +158,8 @@ export const lsp_symbols = defineTool({
 				} satisfies LspSymbolsDetails,
 			};
 		} catch (e) {
-			const message = e instanceof Error ? e.message : String(e);
-			if (message.includes("NOT INSTALLED") || message.includes("No LSP server configured")) {
+			const message = handleMissingDependencyError(e);
+			if (message) {
 				return {
 					content: [{ type: "text", text: message }],
 					details: {

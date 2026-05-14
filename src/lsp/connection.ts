@@ -2,6 +2,8 @@ import { pathToFileURL } from "node:url";
 
 import { LspClientTransport } from "./transport.js";
 
+const INITIALIZE_SETTLE_MS = 300;
+
 export class LspClientConnection extends LspClientTransport {
 	async initialize(): Promise<void> {
 		const rootUri = pathToFileURL(this.root).href;
@@ -61,6 +63,7 @@ export class LspClientConnection extends LspClientTransport {
 		await this.sendNotification("workspace/didChangeConfiguration", {
 			settings: { json: { validate: { enable: true } } },
 		});
-		await new Promise((r) => setTimeout(r, 300));
+		// Some servers accept initialized before their diagnostics/indexing handlers are ready.
+		await new Promise((r) => setTimeout(r, INITIALIZE_SETTLE_MS));
 	}
 }

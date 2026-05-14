@@ -2,7 +2,13 @@ import { existsSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 
 import type { LspClient } from "./client.js";
-import { isLspDeadConnectionError } from "./errors.js";
+import {
+	isLspDeadConnectionError,
+	LspInvalidPathError,
+	LspRequestTimeoutError,
+	LspServerInitializingError,
+	LspServerLookupError,
+} from "./errors.js";
 import { getLspManager, type LspManager } from "./manager.js";
 import { findServerForExtension } from "./server-resolution.js";
 import type { ServerLookupResult } from "./types.js";
@@ -10,17 +16,18 @@ import type { ServerLookupResult } from "./types.js";
 const WORKSPACE_MARKERS = [".git", "package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pom.xml", "build.gradle"];
 
 export function isDirectoryPath(filePath: string): boolean {
-	if (!existsSync(filePath)) {
+	try {
+		return statSync(filePath).isDirectory();
+	} catch {
 		return false;
 	}
-	return statSync(filePath).isDirectory();
 }
 
 export function findWorkspaceRoot(filePath: string): string {
 	const abs = resolve(filePath);
 	let dir = abs;
 
-	if (!existsSync(dir) || !isDirectoryPath(dir)) {
+	if (!isDirectoryPath(dir)) {
 		dir = dirname(dir);
 	}
 
@@ -97,7 +104,7 @@ export async function withLspClient<T>(
 	const absPath = resolve(filePath);
 
 	if (isDirectoryPath(absPath)) {
-		throw new Error(
+		throw new LspInvalidPathError(
 			"Directory paths are not supported by this LSP tool. " +
 				"Use lsp_diagnostics with a directory path for directory diagnostics.",
 		);
@@ -106,7 +113,7 @@ export async function withLspClient<T>(
 	const ext = extname(absPath);
 	const result = findServerForExtension(ext);
 	if (result.status !== "found") {
-		throw new Error(formatServerLookupError(result));
+		throw new LspServerLookupError(formatServerLookupError(result));
 	}
 
 	const server = result.server;
@@ -124,12 +131,9 @@ export async function withLspClient<T>(
 				return acquireAndCall(false);
 			}
 
-			if (err instanceof Error && err.message.includes("timeout")) {
+			if (err instanceof LspRequestTimeoutError) {
 				if (manager.isServerInitializing(root, server.id)) {
-					throw new Error(
-						`LSP server is still initializing. Please retry in a few seconds. ` +
-							`Original error: ${err.message}`,
-					);
+					throw new LspServerInitializingError(err);
 				}
 			}
 			throw err;

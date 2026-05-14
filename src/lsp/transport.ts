@@ -7,7 +7,7 @@ import {
 } from "vscode-jsonrpc/node.js";
 
 import { REQUEST_TIMEOUT_MS, STOP_HARD_KILL_TIMEOUT_MS, STOP_SIGKILL_GRACE_MS } from "./constants.js";
-import { LspConnectionClosedError, LspProcessExitedError } from "./errors.js";
+import { LspConnectionClosedError, LspProcessExitedError, LspRequestTimeoutError } from "./errors.js";
 import { type SpawnedProcess, spawnProcess } from "./process.js";
 import { getAdditionalPathBases } from "./server-installation.js";
 import type { Diagnostic, ResolvedServer } from "./types.js";
@@ -132,11 +132,7 @@ export class LspClientTransport {
 		const timeoutPromise = new Promise<never>((_, reject) => {
 			timeoutHandle = setTimeout(() => {
 				const stderrTail = this.stderrBuffer.slice(-5).join("\n");
-				reject(
-					new Error(
-						`LSP request timeout (method: ${method})${stderrTail ? `\nrecent stderr: ${stderrTail}` : ""}`,
-					),
-				);
+				reject(new LspRequestTimeoutError(method, stderrTail || undefined));
 			}, REQUEST_TIMEOUT_MS);
 		});
 
@@ -184,7 +180,7 @@ export class LspClientTransport {
 	async stop(): Promise<void> {
 		if (this.connection) {
 			try {
-				await this.sendNotification("shutdown", {});
+				await this.sendRequest<null>("shutdown");
 			} catch {}
 			try {
 				await this.sendNotification("exit");

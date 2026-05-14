@@ -8,7 +8,8 @@ export function getAdditionalPathBases(workingDirectory: string): string[] {
 export function isServerInstalled(command: string[]): boolean {
 	if (command.length === 0) return false;
 
-	const cmd = command[0]!;
+	const [cmd] = command;
+	if (!cmd) return false;
 
 	if (cmd.includes("/") || cmd.includes("\\")) {
 		if (existsSync(cmd)) return true;

@@ -2,14 +2,10 @@ import type { Theme } from "@mariozechner/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
 
 import type { ClientSnapshot, LspManager } from "./manager.js";
+import { shorten } from "./utils.js";
 
 const MAX_PATH_WIDTH = 60;
 const MAX_CMD_WIDTH = 40;
-
-function shorten(s: string, max: number): string {
-	if (s.length <= max) return s;
-	return `${s.slice(0, max - 1)}…`;
-}
 
 function formatRelative(now: number, then: number): string {
 	const diff = Math.max(0, Math.floor((now - then) / 1000));

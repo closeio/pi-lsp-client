@@ -2,6 +2,7 @@ import { existsSync, lstatSync, readdirSync, type Stats } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { findWorkspaceRoot, formatServerLookupError } from "./client-wrapper.js";
 import { DEFAULT_MAX_DIAGNOSTICS, DEFAULT_MAX_DIRECTORY_FILES } from "./constants.js";
+import { LspInvalidPathError, LspServerLookupError } from "./errors.js";
 import { filterDiagnosticsBySeverity, formatDiagnostic } from "./formatters.js";
 import { getLspManager } from "./manager.js";
 import { findServerForExtension } from "./server-resolution.js";
@@ -62,19 +63,19 @@ export async function aggregateDiagnosticsForDirectory(
 	maxFiles: number = DEFAULT_MAX_DIRECTORY_FILES,
 ): Promise<string> {
 	if (!extension.startsWith(".")) {
-		throw new Error(
+		throw new LspInvalidPathError(
 			`Extension must start with a dot (e.g., ".ts", not "${extension}"). Use ".${extension}" instead.`,
 		);
 	}
 
 	const absDir = resolve(directory);
 	if (!existsSync(absDir)) {
-		throw new Error(`Directory does not exist: ${absDir}`);
+		throw new LspInvalidPathError(`Directory does not exist: ${absDir}`);
 	}
 
 	const serverResult = findServerForExtension(extension);
 	if (serverResult.status !== "found") {
-		throw new Error(formatServerLookupError(serverResult));
+		throw new LspServerLookupError(formatServerLookupError(serverResult));
 	}
 
 	const server = serverResult.server;

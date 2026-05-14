@@ -4,7 +4,17 @@ import { pathToFileURL } from "node:url";
 
 import { LspClientConnection } from "./connection.js";
 import { getLanguageId } from "./language-mappings.js";
-import type { Diagnostic } from "./types.js";
+import type {
+	Diagnostic,
+	DocumentSymbol,
+	Location,
+	LocationLink,
+	PrepareRenameDefaultBehavior,
+	PrepareRenameResult,
+	Range,
+	SymbolInfo,
+	WorkspaceEdit,
+} from "./types.js";
 
 const POST_OPEN_DELAY_MS = 1000;
 const POST_DIAGNOSTICS_WAIT_MS = 500;
@@ -13,6 +23,11 @@ export class LspClient extends LspClientConnection {
 	private readonly openedFiles = new Set<string>();
 	private readonly documentVersions = new Map<string, number>();
 	private readonly lastSyncedText = new Map<string, string>();
+	private readonly diagnosticPullErrors: Error[] = [];
+
+	getDiagnosticPullErrors(): readonly Error[] {
+		return this.diagnosticPullErrors;
+	}
 
 	async openFile(filePath: string): Promise<void> {
 		const absPath = resolve(filePath);
@@ -60,35 +75,49 @@ export class LspClient extends LspClientConnection {
 		});
 	}
 
-	async definition(filePath: string, line: number, character: number): Promise<unknown> {
+	async definition(
+		filePath: string,
+		line: number,
+		character: number,
+	): Promise<Location | LocationLink | Array<Location | LocationLink> | null> {
 		const absPath = resolve(filePath);
 		await this.openFile(absPath);
-		return this.sendRequest("textDocument/definition", {
-			textDocument: { uri: pathToFileURL(absPath).href },
-			position: { line: line - 1, character },
-		});
+		return this.sendRequest<Location | LocationLink | Array<Location | LocationLink> | null>(
+			"textDocument/definition",
+			{
+				textDocument: { uri: pathToFileURL(absPath).href },
+				position: { line: line - 1, character },
+			},
+		);
 	}
 
-	async references(filePath: string, line: number, character: number, includeDeclaration = true): Promise<unknown> {
+	async references(filePath: string, line: number, character: number, includeDeclaration = true): Promise<Location[]> {
 		const absPath = resolve(filePath);
 		await this.openFile(absPath);
-		return this.sendRequest("textDocument/references", {
+		return this.sendRequest<Location[]>("textDocument/references", {
 			textDocument: { uri: pathToFileURL(absPath).href },
 			position: { line: line - 1, character },
 			context: { includeDeclaration },
 		});
 	}
 
-	async documentSymbols(filePath: string): Promise<unknown> {
+	async documentSymbols(filePath: string): Promise<Array<DocumentSymbol | SymbolInfo>> {
 		const absPath = resolve(filePath);
 		await this.openFile(absPath);
-		return this.sendRequest("textDocument/documentSymbol", {
+		return this.sendRequest<Array<DocumentSymbol | SymbolInfo>>("textDocument/documentSymbol", {
 			textDocument: { uri: pathToFileURL(absPath).href },
 		});
 	}
 
-	async workspaceSymbols(query: string): Promise<unknown> {
-		return this.sendRequest("workspace/symbol", { query });
+	async workspaceSymbols(query: string): Promise<SymbolInfo[]> {
+		return this.sendRequest<SymbolInfo[]>("workspace/symbol", { query });
+	}
+
+	private isUnsupportedDiagnosticPullError(error: unknown): boolean {
+		if (!(error instanceof Error)) return false;
+		const code = "code" in error && typeof error.code === "number" ? error.code : undefined;
+		if (code === -32601) return true;
+		return /unsupported|not supported|method not found|unknown request/i.test(error.message);
 	}
 
 	async diagnostics(filePath: string): Promise<{ items: Diagnostic[] }> {
@@ -101,27 +130,38 @@ export class LspClient extends LspClientConnection {
 			const result = await this.sendRequest<{ items?: Diagnostic[] }>("textDocument/diagnostic", {
 				textDocument: { uri },
 			});
-			if (result && typeof result === "object" && "items" in result) {
-				return result as { items: Diagnostic[] };
+			if (result.items) {
+				return { items: result.items };
 			}
-		} catch {}
+		} catch (error) {
+			if (!this.isUnsupportedDiagnosticPullError(error)) {
+				this.diagnosticPullErrors.push(error instanceof Error ? error : new Error(String(error)));
+			}
+		}
 
 		return { items: this.getStoredDiagnostics(uri) };
 	}
 
-	async prepareRename(filePath: string, line: number, character: number): Promise<unknown> {
+	async prepareRename(
+		filePath: string,
+		line: number,
+		character: number,
+	): Promise<PrepareRenameResult | PrepareRenameDefaultBehavior | Range | null> {
 		const absPath = resolve(filePath);
 		await this.openFile(absPath);
-		return this.sendRequest("textDocument/prepareRename", {
-			textDocument: { uri: pathToFileURL(absPath).href },
-			position: { line: line - 1, character },
-		});
+		return this.sendRequest<PrepareRenameResult | PrepareRenameDefaultBehavior | Range | null>(
+			"textDocument/prepareRename",
+			{
+				textDocument: { uri: pathToFileURL(absPath).href },
+				position: { line: line - 1, character },
+			},
+		);
 	}
 
-	async rename(filePath: string, line: number, character: number, newName: string): Promise<unknown> {
+	async rename(filePath: string, line: number, character: number, newName: string): Promise<WorkspaceEdit | null> {
 		const absPath = resolve(filePath);
 		await this.openFile(absPath);
-		return this.sendRequest("textDocument/rename", {
+		return this.sendRequest<WorkspaceEdit | null>("textDocument/rename", {
 			textDocument: { uri: pathToFileURL(absPath).href },
 			position: { line: line - 1, character },
 			newName,

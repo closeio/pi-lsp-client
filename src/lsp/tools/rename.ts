@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { withLspClient } from "../client-wrapper.js";
 import { formatApplyResult, formatPrepareRenameResult } from "../formatters.js";
 import type { PrepareRenameDefaultBehavior, PrepareRenameResult, Range, WorkspaceEdit } from "../types.js";
+import { handleMissingDependencyError } from "../utils.js";
 import { type ApplyResult, applyWorkspaceEdit } from "../workspace-edit.js";
 
 const PrepareParams = Type.Object({
@@ -46,12 +47,12 @@ export const lsp_prepare_rename = defineTool({
 	parameters: PrepareParams,
 	async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 		try {
-			const result = (await withLspClient(
+			const result = await withLspClient(
 				params.filePath,
 				async (client) => client.prepareRename(params.filePath, params.line, params.character),
 				"prepareRename",
 				{ signal },
-			)) as PrepareRenameResult | PrepareRenameDefaultBehavior | Range | null;
+			);
 
 			const text = formatPrepareRenameResult(result);
 			return {
@@ -64,8 +65,8 @@ export const lsp_prepare_rename = defineTool({
 				} satisfies LspPrepareRenameDetails,
 			};
 		} catch (e) {
-			const message = e instanceof Error ? e.message : String(e);
-			if (message.includes("NOT INSTALLED") || message.includes("No LSP server configured")) {
+			const message = handleMissingDependencyError(e);
+			if (message) {
 				return {
 					content: [{ type: "text", text: message }],
 					details: {
@@ -91,12 +92,12 @@ export const lsp_rename = defineTool({
 	executionMode: "sequential",
 	async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 		try {
-			const edit = (await withLspClient(
+			const edit = await withLspClient(
 				params.filePath,
 				async (client) => client.rename(params.filePath, params.line, params.character, params.newName),
 				"rename",
 				{ signal },
-			)) as WorkspaceEdit | null;
+			);
 
 			const apply = applyWorkspaceEdit(edit);
 			const text = formatApplyResult(apply);
@@ -112,8 +113,8 @@ export const lsp_rename = defineTool({
 				} satisfies LspRenameDetails,
 			};
 		} catch (e) {
-			const message = e instanceof Error ? e.message : String(e);
-			if (message.includes("NOT INSTALLED") || message.includes("No LSP server configured")) {
+			const message = handleMissingDependencyError(e);
+			if (message) {
 				return {
 					content: [{ type: "text", text: message }],
 					details: {

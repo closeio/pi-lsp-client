@@ -31,8 +31,6 @@ export interface LspManagerOptions {
 	now?: () => number;
 }
 
-const PROCESS_EXIT_LISTENERS = new WeakMap<LspManager, () => void>();
-
 function awaitWithSignal<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
 	if (!signal) return promise;
 	return new Promise<T>((resolve, reject) => {
@@ -110,7 +108,6 @@ export class LspManager {
 		this.exitDisposer = () => {
 			process.removeListener("exit", handler);
 		};
-		PROCESS_EXIT_LISTENERS.set(this, handler);
 	}
 
 	private getKey(root: string, serverId: string): string {
@@ -348,7 +345,6 @@ export class LspManager {
 		if (this.exitDisposer) {
 			this.exitDisposer();
 			this.exitDisposer = null;
-			PROCESS_EXIT_LISTENERS.delete(this);
 		}
 
 		const stopPromises: Promise<void>[] = [];

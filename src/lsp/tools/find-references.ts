@@ -5,6 +5,7 @@ import { withLspClient } from "../client-wrapper.js";
 import { DEFAULT_MAX_REFERENCES } from "../constants.js";
 import { formatLocation } from "../formatters.js";
 import type { Location } from "../types.js";
+import { handleMissingDependencyError } from "../utils.js";
 
 const Params = Type.Object({
 	filePath: Type.String({ description: "Path to the source file" }),
@@ -75,8 +76,8 @@ export const lsp_find_references = defineTool({
 				} satisfies LspFindReferencesDetails,
 			};
 		} catch (e) {
-			const message = e instanceof Error ? e.message : String(e);
-			if (message.includes("NOT INSTALLED") || message.includes("No LSP server configured")) {
+			const message = handleMissingDependencyError(e);
+			if (message) {
 				return {
 					content: [{ type: "text", text: message }],
 					details: {
