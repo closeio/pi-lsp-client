@@ -4,6 +4,7 @@ export type DiagnosticsRunner = (filePath: string) => Promise<string>;
 
 const MUTATION_TOOL_NAMES = new Set(["write", "edit", "apply_patch"]);
 const CLEAN_DIAGNOSTICS_TEXT = "No diagnostics found";
+const UNSUPPORTED_EXTENSION_TEXT = "No LSP server configured for extension:";
 export const POST_EDIT_DIAGNOSTICS_WIDGET_KEY = "pi-lsp";
 
 type WidgetPlacement = "aboveEditor" | "belowEditor";
@@ -31,7 +32,7 @@ export async function appendPostEditDiagnostics(
 	const blocks: DiagnosticBlock[] = [];
 	for (const filePath of filePaths) {
 		const diagnostics = (await runDiagnostics(filePath)).trim();
-		if (diagnostics.length === 0 || diagnostics === CLEAN_DIAGNOSTICS_TEXT) continue;
+		if (isCleanPostEditDiagnostics(diagnostics)) continue;
 		blocks.push({ filePath, diagnostics });
 	}
 
@@ -49,6 +50,14 @@ export async function appendPostEditDiagnostics(
 		],
 		widgetLines: undefined,
 	};
+}
+
+function isCleanPostEditDiagnostics(diagnostics: string): boolean {
+	return (
+		diagnostics.length === 0 ||
+		diagnostics === CLEAN_DIAGNOSTICS_TEXT ||
+		diagnostics.startsWith(UNSUPPORTED_EXTENSION_TEXT)
+	);
 }
 
 export function syncPostEditDiagnosticsWidget(

@@ -110,6 +110,20 @@ describe("post-edit diagnostics", () => {
 		expect(result).toEqual({ widgetLines: undefined });
 	});
 
+	it("#given post-edit diagnostics for unsupported extension #when appending #then treats it as clean", async () => {
+		// given
+		const event = editEvent("ccapi-cf-proxy/wrangler.toml");
+
+		// when
+		const result = await appendPostEditDiagnostics(
+			event,
+			async () => "No LSP server configured for extension: .toml\n\nAvailable servers: typescript, deno",
+		);
+
+		// then
+		expect(result).toEqual({ widgetLines: undefined });
+	});
+
 	it("#given apply_patch result with multiple files #when appending post-edit diagnostics #then adds one block per file with diagnostics", async () => {
 		// given
 		const event = applyPatchEvent(["src/a.ts", "src/b.ts"]);
