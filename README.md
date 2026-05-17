@@ -147,6 +147,8 @@ Spawn and initialize an installed server in the current working directory withou
 
 Each server has an `installed` check (PATH probe + extension probing) and an install hint (`LSP_INSTALL_HINTS`). A subset is auto-installable via `/lsp install <id>` (`AUTO_INSTALLABLE_SERVERS`).
 
+Rust is manual-only: `/lsp install rust` prints the `rust-analyzer` install hint instead of running `rustup`. If `rust-analyzer` exits while loading `rust-src`, repair the active toolchain with `rustup component remove rust-src` and `rustup component add rust-src`, then warm up Rust again.
+
 ## Custom Servers / Configuration
 
 Add custom servers by creating either:
@@ -194,6 +196,7 @@ Add custom servers by creating either:
 |---------|-----|
 | "LSP server '<id>' is configured but NOT INSTALLED." | Run `/lsp install <id>` if the server is in the auto-installable whitelist, otherwise install it manually using the displayed hint. |
 | "No LSP server configured for extension: .ext" | Add a custom entry in `.pi/lsp-client.json` (see [Custom Servers](#custom-servers--configuration)). |
+| `rust-analyzer` exited while loading `rust-src` | Run `rustup component remove rust-src` and `rustup component add rust-src` for the active toolchain, then retry the LSP tool or `/lsp warmup rust`. |
 | `lsp_rename` did not retry after a server crash | This is by design. Mutating tools never auto-retry to avoid double-applying edits. Re-issue the rename manually. |
 | Footer status stuck after `/reload` | File a bug. The `session_shutdown` handler clears `pi-lsp` status/widget keys. If they persist, the cleanup boundary was bypassed. |
 | Stale LSP child after `/reload` | Run `/lsp` to inspect the current snapshot. If `getSnapshot()` is empty but a child process is still alive, file a bug — `stopAll()` should have killed it. |

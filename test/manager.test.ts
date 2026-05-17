@@ -102,7 +102,7 @@ describe("LspManager", () => {
 		// then
 		expect(clients.length).toBe(2);
 		expect(fresh).toBe(clients[1]);
-		expect(clients[0]!.stopCallCount).toBeGreaterThan(0);
+		expect(clients[0]?.stopCallCount).toBeGreaterThan(0);
 
 		await manager.stopAll();
 	});
@@ -182,6 +182,60 @@ describe("LspManager", () => {
 		const fresh = await manager.getClient("/root/a", server);
 
 		// then
+		expect(clients.length).toBe(2);
+		expect(fresh).toBe(clients[1]);
+
+		await manager.stopAll();
+	});
+
+	it("#given failed start #when later getClient #then failed client is stopped and a fresh client is built", async () => {
+		// given
+		let firstCall = true;
+		const failingFactory = () => {
+			if (firstCall) {
+				firstCall = false;
+				return { failStart: true };
+			}
+			return {};
+		};
+		const { manager, clients } = setupManager({ clientFactoryOptions: failingFactory });
+		const server = makeServer("typescript");
+
+		// when
+		await expect(manager.getClient("/root/a", server)).rejects.toThrow("fake start failed");
+
+		// then
+		expect(manager.getSnapshot()).toEqual([]);
+		expect(clients[0]?.stopCallCount).toBeGreaterThan(0);
+
+		const fresh = await manager.getClient("/root/a", server);
+		expect(clients.length).toBe(2);
+		expect(fresh).toBe(clients[1]);
+
+		await manager.stopAll();
+	});
+
+	it("#given failed initialize #when later getClient #then failed client is stopped and a fresh client is built", async () => {
+		// given
+		let firstCall = true;
+		const failingFactory = () => {
+			if (firstCall) {
+				firstCall = false;
+				return { failInitialize: true };
+			}
+			return {};
+		};
+		const { manager, clients } = setupManager({ clientFactoryOptions: failingFactory });
+		const server = makeServer("typescript");
+
+		// when
+		await expect(manager.getClient("/root/a", server)).rejects.toThrow("fake initialize failed");
+
+		// then
+		expect(manager.getSnapshot()).toEqual([]);
+		expect(clients[0]!.stopCallCount).toBeGreaterThan(0);
+
+		const fresh = await manager.getClient("/root/a", server);
 		expect(clients.length).toBe(2);
 		expect(fresh).toBe(clients[1]);
 
