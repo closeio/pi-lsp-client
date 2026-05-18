@@ -28,11 +28,11 @@ export const lsp_goto_definition = defineTool({
 	parameters: Params,
 	async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 		try {
-			const result = await withLspClient(
+			const result = await withLspClient<Location | LocationLink | Array<Location | LocationLink> | null>(
 				params.filePath,
 				async (client) => client.definition(params.filePath, params.line, params.character),
 				"definition",
-				{ signal },
+				signal === undefined ? {} : { signal },
 			);
 
 			const locations = !result ? [] : Array.isArray(result) ? result : [result];

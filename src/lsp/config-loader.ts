@@ -80,8 +80,8 @@ export function getMergedServers(): ServerWithSource[] {
 				command: entry.command,
 				extensions: entry.extensions,
 				priority: entry.priority ?? 0,
-				env: entry.env,
-				initialization: entry.initialization,
+				...(entry.env !== undefined ? { env: entry.env } : {}),
+				...(entry.initialization !== undefined ? { initialization: entry.initialization } : {}),
 				source,
 			});
 			seen.add(id);

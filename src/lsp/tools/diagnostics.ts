@@ -84,11 +84,11 @@ export const lsp_diagnostics = defineTool({
 				};
 			}
 
-			const result = await withLspClient(
+			const result = await withLspClient<{ items?: Diagnostic[] } | Diagnostic[] | null | undefined>(
 				params.filePath,
 				async (client) => client.diagnostics(params.filePath),
 				"diagnostics",
-				{ signal },
+				signal === undefined ? {} : { signal },
 			);
 
 			let diagnostics = asArray(result);

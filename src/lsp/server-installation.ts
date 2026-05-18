@@ -19,7 +19,7 @@ export function isServerInstalled(command: string[]): boolean {
 
 	let exts = [""];
 	if (isWindows) {
-		const pathExt = process.env.PATHEXT ?? "";
+		const pathExt = process.env["PATHEXT"] ?? "";
 		if (pathExt) {
 			const systemExts = pathExt.split(";").filter(Boolean);
 			exts = [...new Set([...exts, ...systemExts, ".exe", ".cmd", ".bat", ".ps1"])];
@@ -28,9 +28,9 @@ export function isServerInstalled(command: string[]): boolean {
 		}
 	}
 
-	let pathEnv = process.env.PATH ?? "";
+	let pathEnv = process.env["PATH"] ?? "";
 	if (isWindows && !pathEnv) {
-		pathEnv = process.env.Path ?? "";
+		pathEnv = process.env["Path"] ?? "";
 	}
 
 	const paths = pathEnv.split(delimiter);

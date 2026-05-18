@@ -13,31 +13,33 @@ describe("BUILTIN_SERVERS", () => {
 
 	it("#given typescript #when looking it up #then exposes command and extensions", () => {
 		// given
-		const ts = BUILTIN_SERVERS.typescript;
+		const ts = BUILTIN_SERVERS["typescript"];
+		if (!ts) throw new Error("expected typescript server");
 
 		// when / then
 		expect(ts).toBeDefined();
-		expect(ts!.command[0]).toBe("typescript-language-server");
-		expect(ts!.extensions).toContain(".ts");
-		expect(ts!.extensions).toContain(".tsx");
+		expect(ts.command[0]).toBe("typescript-language-server");
+		expect(ts.extensions).toContain(".ts");
+		expect(ts.extensions).toContain(".tsx");
 	});
 
 	it("#given rust #when looking it up #then maps to rust-analyzer", () => {
 		// given
-		const rust = BUILTIN_SERVERS.rust;
+		const rust = BUILTIN_SERVERS["rust"];
+		if (!rust) throw new Error("expected rust server");
 
 		// when / then
 		expect(rust).toBeDefined();
-		expect(rust!.command[0]).toBe("rust-analyzer");
-		expect(rust!.extensions).toEqual([".rs"]);
+		expect(rust.command[0]).toBe("rust-analyzer");
+		expect(rust.extensions).toEqual([".rs"]);
 	});
 
 	it("#given rust install guidance #when inspecting registry #then rust is manual install only", () => {
 		// given
-		const hint = LSP_INSTALL_HINTS.rust;
+		const hint = LSP_INSTALL_HINTS["rust"];
 
 		// when / then
-		expect(AUTO_INSTALLABLE_SERVERS.rust).toBeUndefined();
+		expect(AUTO_INSTALLABLE_SERVERS["rust"]).toBeUndefined();
 		expect(hint).toContain("rust-analyzer");
 		expect(hint).toContain("rustup component add rust-analyzer");
 		expect(hint).toContain("rustup component remove rust-src");
@@ -59,7 +61,7 @@ describe("LSP_INSTALL_HINTS", () => {
 
 	it("#given typescript #when looking up hint #then mentions npm install", () => {
 		// given / when / then
-		expect(LSP_INSTALL_HINTS.typescript).toContain("npm install");
-		expect(LSP_INSTALL_HINTS.typescript).toContain("typescript-language-server");
+		expect(LSP_INSTALL_HINTS["typescript"]).toContain("npm install");
+		expect(LSP_INSTALL_HINTS["typescript"]).toContain("typescript-language-server");
 	});
 });

@@ -50,7 +50,6 @@ export const lsp_symbols = defineTool({
 						details: {
 							filePath: params.filePath,
 							scope,
-							query: undefined,
 							symbols: [],
 							totalSymbols: 0,
 							truncated: false,
@@ -62,11 +61,11 @@ export const lsp_symbols = defineTool({
 
 				const query = params.query;
 
-				const result = await withLspClient(
+				const result = await withLspClient<SymbolInfo[]>(
 					params.filePath,
 					async (client) => client.workspaceSymbols(query),
 					"workspaceSymbols",
-					{ signal },
+					signal === undefined ? {} : { signal },
 				);
 
 				const all = result;
@@ -107,11 +106,11 @@ export const lsp_symbols = defineTool({
 				};
 			}
 
-			const result = await withLspClient(
+			const result = await withLspClient<Array<DocumentSymbol | SymbolInfo>>(
 				params.filePath,
 				async (client) => client.documentSymbols(params.filePath),
 				"documentSymbols",
-				{ signal },
+				signal === undefined ? {} : { signal },
 			);
 
 			const all = result;
@@ -160,18 +159,19 @@ export const lsp_symbols = defineTool({
 		} catch (e) {
 			const message = handleMissingDependencyError(e);
 			if (message) {
+				const details: LspSymbolsDetails = {
+					filePath: params.filePath,
+					scope,
+					symbols: [],
+					totalSymbols: 0,
+					truncated: false,
+					error: message,
+					errorKind: "missing_dependency",
+				};
+				if (params.query !== undefined) details.query = params.query;
 				return {
 					content: [{ type: "text", text: message }],
-					details: {
-						filePath: params.filePath,
-						scope,
-						query: params.query,
-						symbols: [],
-						totalSymbols: 0,
-						truncated: false,
-						error: message,
-						errorKind: "missing_dependency",
-					} satisfies LspSymbolsDetails,
+					details,
 				};
 			}
 			throw e;

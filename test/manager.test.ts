@@ -34,6 +34,18 @@ function setupManager(options?: {
 	return { manager, clients, now };
 }
 
+function firstClient(clients: readonly FakeLspClient[]): FakeLspClient {
+	const client = clients[0];
+	if (!client) throw new Error("expected first fake LSP client");
+	return client;
+}
+
+function firstSnapshot(manager: LspManager): ReturnType<LspManager["getSnapshot"]>[number] {
+	const entry = manager.getSnapshot()[0];
+	if (!entry) throw new Error("expected first LSP manager snapshot entry");
+	return entry;
+}
+
 describe("LspManager", () => {
 	it("#given two concurrent getClient calls #when both await #then start and initialize run once", async () => {
 		// given
@@ -46,9 +58,9 @@ describe("LspManager", () => {
 		// then
 		expect(clients.length).toBe(1);
 		expect(c1).toBe(c2);
-		expect(clients[0]!.startCallCount).toBe(1);
-		expect(clients[0]!.initializeCallCount).toBe(1);
-		expect(manager.getSnapshot()[0]!.refCount).toBe(2);
+		expect(firstClient(clients).startCallCount).toBe(1);
+		expect(firstClient(clients).initializeCallCount).toBe(1);
+		expect(firstSnapshot(manager).refCount).toBe(2);
 
 		await manager.stopAll();
 	});
@@ -78,12 +90,12 @@ describe("LspManager", () => {
 		// when
 		now.value += 100;
 		await manager.getClient("/root/a", server);
-		expect(manager.getSnapshot()[0]!.refCount).toBe(2);
+		expect(firstSnapshot(manager).refCount).toBe(2);
 		manager.releaseClient("/root/a", server.id);
 		manager.releaseClient("/root/a", server.id);
 
 		// then
-		expect(manager.getSnapshot()[0]!.refCount).toBe(0);
+		expect(firstSnapshot(manager).refCount).toBe(0);
 
 		await manager.stopAll();
 	});
@@ -94,7 +106,7 @@ describe("LspManager", () => {
 		const server = makeServer("typescript");
 		await manager.getClient("/root/a", server);
 		manager.releaseClient("/root/a", server.id);
-		clients[0]!.markDead();
+		firstClient(clients).markDead();
 
 		// when
 		const fresh = await manager.getClient("/root/a", server);
@@ -121,7 +133,7 @@ describe("LspManager", () => {
 			vi.advanceTimersByTime(150);
 
 			// then
-			expect(clients[0]!.stopCallCount).toBeGreaterThan(0);
+			expect(firstClient(clients).stopCallCount).toBeGreaterThan(0);
 			expect(manager.getSnapshot()).toEqual([]);
 
 			await manager.stopAll();
@@ -153,7 +165,7 @@ describe("LspManager", () => {
 			vi.advanceTimersByTime(150);
 
 			// then
-			expect(clients[0]!.stopCallCount).toBeGreaterThan(0);
+			expect(firstClient(clients).stopCallCount).toBeGreaterThan(0);
 			expect(manager.getSnapshot()).toEqual([]);
 
 			await manager.stopAll();
@@ -233,7 +245,7 @@ describe("LspManager", () => {
 
 		// then
 		expect(manager.getSnapshot()).toEqual([]);
-		expect(clients[0]!.stopCallCount).toBeGreaterThan(0);
+		expect(firstClient(clients).stopCallCount).toBeGreaterThan(0);
 
 		const fresh = await manager.getClient("/root/a", server);
 		expect(clients.length).toBe(2);
@@ -255,8 +267,8 @@ describe("LspManager", () => {
 
 		await Promise.resolve();
 		expect(manager.getSnapshot()).toHaveLength(1);
-		expect(manager.getSnapshot()[0]!.pendingWaiters).toBe(1);
-		expect(manager.getSnapshot()[0]!.refCount).toBe(0);
+		expect(firstSnapshot(manager).pendingWaiters).toBe(1);
+		expect(firstSnapshot(manager).refCount).toBe(0);
 
 		controller.abort();
 
@@ -264,7 +276,7 @@ describe("LspManager", () => {
 		await expect(acquisition).rejects.toThrow();
 		await new Promise((r) => setTimeout(r, 20));
 		expect(manager.getSnapshot()).toEqual([]);
-		expect(clients[0]!.stopCallCount).toBeGreaterThan(0);
+		expect(firstClient(clients).stopCallCount).toBeGreaterThan(0);
 
 		await manager.stopAll();
 	});
@@ -293,7 +305,7 @@ describe("LspManager", () => {
 
 		// then
 		expect(snapshot).toHaveLength(1);
-		const entry = snapshot[0]!;
+		const entry = firstSnapshot(manager);
 		expect(entry.root).toBe("/root/a");
 		expect(entry.serverId).toBe("typescript");
 		expect(entry.command).toEqual(["fake-server"]);

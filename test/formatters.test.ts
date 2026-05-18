@@ -94,6 +94,12 @@ describe("filterDiagnosticsBySeverity", () => {
 		{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }, severity: 4, message: "h" },
 	];
 
+	function firstDiagnostic(result: ReturnType<typeof filterDiagnosticsBySeverity>) {
+		const diagnostic = result[0];
+		if (!diagnostic) throw new Error("expected first diagnostic");
+		return diagnostic;
+	}
+
 	it("#given no severity #when filtering #then returns all diagnostics", () => {
 		// given / when
 		const result = filterDiagnosticsBySeverity(diagnostics);
@@ -116,7 +122,7 @@ describe("filterDiagnosticsBySeverity", () => {
 
 		// then
 		expect(result).toHaveLength(1);
-		expect(result[0]!.message).toBe("e");
+		expect(firstDiagnostic(result).message).toBe("e");
 	});
 
 	it("#given 'warning' severity #when filtering #then returns only warning diagnostics", () => {
@@ -125,7 +131,7 @@ describe("filterDiagnosticsBySeverity", () => {
 
 		// then
 		expect(result).toHaveLength(1);
-		expect(result[0]!.message).toBe("w");
+		expect(firstDiagnostic(result).message).toBe("w");
 	});
 });
 

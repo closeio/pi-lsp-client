@@ -70,13 +70,13 @@ export function syncPostEditDiagnosticsWidget(
 
 export function extractMutatedFilePaths(event: ToolResultEvent): string[] {
 	const paths = new Set<string>();
-	addStringValue(paths, event.input.path);
-	addStringValue(paths, event.input.filePath);
-	addStringArray(paths, event.input.paths);
-	addStringArray(paths, event.input.filePaths);
-	addPatchInput(paths, event.input.input);
-	addPatchFiles(paths, event.input.files);
-	addPatchFiles(paths, event.input.changes);
+	addStringValue(paths, event.input["path"]);
+	addStringValue(paths, event.input["filePath"]);
+	addStringArray(paths, event.input["paths"]);
+	addStringArray(paths, event.input["filePaths"]);
+	addPatchInput(paths, event.input["input"]);
+	addPatchFiles(paths, event.input["files"]);
+	addPatchFiles(paths, event.input["changes"]);
 	return [...paths];
 }
 
@@ -113,9 +113,9 @@ function addPatchFiles(paths: Set<string>, value: unknown): void {
 	if (!Array.isArray(value)) return;
 	for (const item of value) {
 		if (!isRecord(item)) continue;
-		addStringValue(paths, item.path);
-		addStringValue(paths, item.filePath);
-		addStringValue(paths, item.movePath);
+		addStringValue(paths, item["path"]);
+		addStringValue(paths, item["filePath"]);
+		addStringValue(paths, item["movePath"]);
 	}
 }
 

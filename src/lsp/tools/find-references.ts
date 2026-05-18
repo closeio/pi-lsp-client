@@ -32,15 +32,15 @@ export const lsp_find_references = defineTool({
 	parameters: Params,
 	async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
 		try {
-			const result = await withLspClient(
+			const result = await withLspClient<Location[]>(
 				params.filePath,
 				async (client) =>
 					client.references(params.filePath, params.line, params.character, params.includeDeclaration ?? true),
 				"references",
-				{ signal },
+				signal === undefined ? {} : { signal },
 			);
 
-			const all = (Array.isArray(result) ? result : []) as Location[];
+			const all = Array.isArray(result) ? result : [];
 			const total = all.length;
 			const truncated = total > DEFAULT_MAX_REFERENCES;
 			const limited = truncated ? all.slice(0, DEFAULT_MAX_REFERENCES) : all;

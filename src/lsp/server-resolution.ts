@@ -15,8 +15,8 @@ export function findServerForExtension(ext: string): ServerLookupResult {
 					command: server.command,
 					extensions: server.extensions,
 					priority: server.priority,
-					env: server.env,
-					initialization: server.initialization,
+					...(server.env !== undefined ? { env: server.env } : {}),
+					...(server.initialization !== undefined ? { initialization: server.initialization } : {}),
 				},
 			};
 		}
