@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 
 import { LspInvalidPathError, LspProcessSpawnError } from "./errors.js";
@@ -62,11 +62,27 @@ function wrap(proc: ChildProcess): SpawnedProcess {
 		},
 		exited: exitedPromise,
 		kill(signal?: NodeJS.Signals) {
-			try {
-				proc.kill(signal ?? "SIGTERM");
-			} catch {}
+			killProcessTree(proc, signal ?? "SIGTERM");
 		},
 	};
+}
+
+function killProcessTree(proc: ChildProcess, signal: NodeJS.Signals): void {
+	if (process.platform === "win32" && proc.pid) {
+		const result = spawnSync("taskkill", ["/pid", String(proc.pid), "/f", "/t"], { stdio: "ignore" });
+		if (!result.error && result.status === 0) return;
+	}
+
+	if (process.platform !== "win32" && proc.pid) {
+		try {
+			process.kill(-proc.pid, signal);
+			return;
+		} catch {}
+	}
+
+	try {
+		proc.kill(signal);
+	} catch {}
 }
 
 export function spawnProcess(command: string[], options: SpawnOptions): SpawnedProcess {
@@ -86,6 +102,7 @@ export function spawnProcess(command: string[], options: SpawnOptions): SpawnedP
 		stdio: ["pipe", "pipe", "pipe"],
 		windowsHide: true,
 		shell: process.platform === "win32",
+		detached: process.platform !== "win32",
 	});
 
 	return wrap(proc);
