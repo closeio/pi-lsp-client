@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,7 +13,7 @@ interface SandboxEnv {
 }
 
 function setupSandbox(): SandboxEnv {
-	const rootDir = mkdtempSync(join(tmpdir(), "pi-lsp-cfg-"));
+	const rootDir = realpathSync(mkdtempSync(join(tmpdir(), "pi-lsp-cfg-")));
 	const originalCwd = process.cwd();
 	const originalEnv = process.env["PI_CODING_AGENT_DIR"];
 	process.chdir(rootDir);
