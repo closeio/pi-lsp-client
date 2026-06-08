@@ -143,7 +143,7 @@ Spawn and initialize an installed server in the current working directory withou
 
 ## Built-in Servers
 
-40+ language servers from omo's `BUILTIN_SERVERS`, including TypeScript (`typescript-language-server`), Python (`pyright`, `basedpyright`, `ruff`, `ty`), Go (`gopls`), Rust (`rust-analyzer`), C/C++ (`clangd`), Ruby (`ruby-lsp`), Bash (`bash-language-server`), YAML (`yaml-language-server`), Lua, Java, PHP, Dart, Swift, Kotlin, Zig, Nix, Haskell, Elixir, OCaml, Terraform, and more.
+40+ language servers from omo's `BUILTIN_SERVERS`, including TypeScript (`typescript-language-server`), Python (`pyright`, `basedpyright`, `ruff`, `ty`, `pyrefly`), Go (`gopls`), Rust (`rust-analyzer`), C/C++ (`clangd`), Ruby (`ruby-lsp`), Bash (`bash-language-server`), YAML (`yaml-language-server`), Lua, Java, PHP, Dart, Swift, Kotlin, Zig, Nix, Haskell, Elixir, OCaml, Terraform, and more.
 
 Each server has an `installed` check (PATH probe + extension probing) and an install hint (`LSP_INSTALL_HINTS`). A subset is auto-installable via `/lsp install <id>` (`AUTO_INSTALLABLE_SERVERS`).
 
@@ -153,8 +153,12 @@ Rust is manual-only: `/lsp install rust` prints the `rust-analyzer` install hint
 
 Add custom servers by creating either:
 
-- `.pi/lsp-client.json` (project-local, takes priority)
-- `~/.pi/lsp-client.json` (user-global)
+- `.pi/lsp-client.json` in the directory you launch `pi` from (project-local, takes priority)
+- `<pi agent dir>/lsp-client.json` (user-global)
+
+The user-global path follows pi's own convention. By default that's `~/.pi/agent/lsp-client.json`, but it honors the `PI_CODING_AGENT_DIR` environment variable (the same one pi reads for its agent directory). If `PI_CODING_AGENT_DIR=/path/to/agent`, the user config is read from `/path/to/agent/lsp-client.json`.
+
+For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the primary agent-dir path does not exist.
 
 ```jsonc
 {
