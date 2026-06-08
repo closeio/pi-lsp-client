@@ -1,8 +1,11 @@
+import { extname } from "node:path";
+
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 
 import { uriToPath } from "./formatters.js";
 import { SYMBOL_KIND_MAP } from "./language-mappings.js";
+import { findServerForExtension } from "./server-resolution.js";
 import type { LspDiagnosticsDetails } from "./tools/diagnostics.js";
 import type { LspFindReferencesDetails } from "./tools/find-references.js";
 import type { LspGotoDefinitionDetails } from "./tools/goto-definition.js";
@@ -10,6 +13,25 @@ import type { LspPrepareRenameDetails, LspRenameDetails } from "./tools/rename.j
 import type { LspSymbolsDetails } from "./tools/symbols.js";
 import type { Diagnostic, DocumentSymbol, Location, LocationLink, SymbolInfo } from "./types.js";
 import { shorten } from "./utils.js";
+
+// Resolve the LSP server id for a file path so call rendering can surface
+// which server is about to be (or was) used. Returns null when the path has
+// no recognizable extension (e.g. directory paths used by lsp_diagnostics) or
+// when no server is configured for it. Cheap: findServerForExtension reads at
+// most two small JSON config files.
+function resolveServerIdForPath(filePath: string): string | null {
+	const ext = extname(filePath);
+	if (!ext) return null;
+	const result = findServerForExtension(ext);
+	if (result.status === "not_configured") return null;
+	return result.server.id;
+}
+
+function serverBadge(filePath: string, theme: Theme): string {
+	const id = resolveServerIdForPath(filePath);
+	if (!id) return "";
+	return `${theme.fg("muted", `[${id}] `)}`;
+}
 
 const COLLAPSED_HEAD = 3;
 const EXPANDED_HEAD = 20;
@@ -101,9 +123,10 @@ function symbolKindName(kind: number): string {
 
 export function renderDiagnosticsCall(args: DiagnosticsArgs, theme: Theme): Text {
 	const head = theme.fg("toolTitle", theme.bold("lsp_diagnostics "));
+	const badge = serverBadge(args.filePath, theme);
 	const file = theme.fg("accent", shorten(args.filePath, PATH_BUDGET));
 	const sev = args.severity ? theme.fg("muted", ` [${args.severity}]`) : "";
-	return new Text(head + file + sev, 0, 0);
+	return new Text(head + badge + file + sev, 0, 0);
 }
 
 export function renderDiagnosticsResult(
@@ -207,8 +230,9 @@ export function renderDiagnosticsResult(
 
 export function renderGotoDefinitionCall(args: PositionArgs, theme: Theme): Text {
 	const head = theme.fg("toolTitle", theme.bold("lsp_goto_definition "));
+	const badge = serverBadge(args.filePath, theme);
 	const loc = theme.fg("accent", `${shorten(args.filePath, PATH_BUDGET)}:${args.line}:${args.character}`);
-	return new Text(head + loc, 0, 0);
+	return new Text(head + badge + loc, 0, 0);
 }
 
 export function renderGotoDefinitionResult(
@@ -235,8 +259,9 @@ export function renderGotoDefinitionResult(
 
 export function renderFindReferencesCall(args: PositionArgs & { includeDeclaration?: boolean }, theme: Theme): Text {
 	const head = theme.fg("toolTitle", theme.bold("lsp_find_references "));
+	const badge = serverBadge(args.filePath, theme);
 	const loc = theme.fg("accent", `${shorten(args.filePath, PATH_BUDGET)}:${args.line}:${args.character}`);
-	return new Text(head + loc, 0, 0);
+	return new Text(head + badge + loc, 0, 0);
 }
 
 export function renderFindReferencesResult(
@@ -283,13 +308,14 @@ export function renderFindReferencesResult(
 
 export function renderSymbolsCall(args: SymbolsArgs, theme: Theme): Text {
 	const head = theme.fg("toolTitle", theme.bold("lsp_symbols "));
+	const badge = serverBadge(args.filePath, theme);
 	const scope = theme.fg("muted", `[${args.scope}]`);
 	if (args.scope === "workspace") {
 		const q = theme.fg("accent", ` "${shorten(args.query ?? "", 40)}"`);
-		return new Text(head + scope + q, 0, 0);
+		return new Text(head + badge + scope + q, 0, 0);
 	}
 	const file = theme.fg("accent", ` ${shorten(args.filePath, PATH_BUDGET)}`);
-	return new Text(head + scope + file, 0, 0);
+	return new Text(head + badge + scope + file, 0, 0);
 }
 
 function renderDocumentSymbol(s: DocumentSymbol, indent: number, theme: Theme): string {
@@ -360,8 +386,9 @@ export function renderSymbolsResult(
 
 export function renderPrepareRenameCall(args: PositionArgs, theme: Theme): Text {
 	const head = theme.fg("toolTitle", theme.bold("lsp_prepare_rename "));
+	const badge = serverBadge(args.filePath, theme);
 	const loc = theme.fg("accent", `${shorten(args.filePath, PATH_BUDGET)}:${args.line}:${args.character}`);
-	return new Text(head + loc, 0, 0);
+	return new Text(head + badge + loc, 0, 0);
 }
 
 export function renderPrepareRenameResult(
@@ -382,10 +409,11 @@ export function renderPrepareRenameResult(
 
 export function renderRenameCall(args: RenameArgs, theme: Theme): Text {
 	const head = theme.fg("toolTitle", theme.bold("lsp_rename "));
+	const badge = serverBadge(args.filePath, theme);
 	const loc = theme.fg("accent", `${shorten(args.filePath, PATH_BUDGET)}:${args.line}:${args.character}`);
 	const arrow = theme.fg("muted", " → ");
 	const newName = theme.fg("accent", `"${args.newName}"`);
-	return new Text(head + loc + arrow + newName, 0, 0);
+	return new Text(head + badge + loc + arrow + newName, 0, 0);
 }
 
 export function renderRenameResult(

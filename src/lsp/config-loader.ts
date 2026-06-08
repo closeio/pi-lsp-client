@@ -5,6 +5,31 @@ import { join } from "node:path";
 import { BUILTIN_SERVERS } from "./server-definitions.js";
 import type { ResolvedServer } from "./types.js";
 
+// pi's own agent-dir convention. Mirrors @earendil-works/pi-coding-agent's
+// getAgentDir() so this extension picks up the same directory pi uses for
+// user-scoped configuration. Kept local to avoid a runtime dependency on
+// pi-coding-agent internals beyond the documented extension API surface.
+const PI_CONFIG_DIR_NAME = ".pi";
+const PI_AGENT_DIR_SUBDIR = "agent";
+const PI_ENV_AGENT_DIR = "PI_CODING_AGENT_DIR";
+const LSP_CONFIG_FILE_NAME = "lsp-client.json";
+
+function expandTilde(path: string): string {
+	if (path === "~") return homedir();
+	if (path.startsWith("~/") || path.startsWith("~\\")) {
+		return join(homedir(), path.slice(2));
+	}
+	return path;
+}
+
+export function getPiAgentDir(): string {
+	const envDir = process.env[PI_ENV_AGENT_DIR];
+	if (envDir && envDir.length > 0) {
+		return expandTilde(envDir);
+	}
+	return join(homedir(), PI_CONFIG_DIR_NAME, PI_AGENT_DIR_SUBDIR);
+}
+
 interface LspEntry {
 	disabled?: boolean;
 	command?: string[];
@@ -24,11 +49,21 @@ export interface ServerWithSource extends ResolvedServer {
 	source: "project" | "user" | "builtin";
 }
 
-export function getConfigPaths(): { project: string; user: string } {
+export interface ConfigPaths {
+	project: string;
+	user: string;
+	/** Legacy ~/.pi/lsp-client.json path. Kept for backward compatibility with
+	 * pre-getAgentDir() releases of this extension. Read only if the primary
+	 * user path is missing. */
+	userLegacy: string;
+}
+
+export function getConfigPaths(): ConfigPaths {
 	const cwd = process.cwd();
 	return {
-		project: join(cwd, ".pi", "lsp-client.json"),
-		user: join(homedir(), ".pi", "lsp-client.json"),
+		project: join(cwd, PI_CONFIG_DIR_NAME, LSP_CONFIG_FILE_NAME),
+		user: join(getPiAgentDir(), LSP_CONFIG_FILE_NAME),
+		userLegacy: join(homedir(), PI_CONFIG_DIR_NAME, LSP_CONFIG_FILE_NAME),
 	};
 }
 
@@ -48,7 +83,7 @@ export function loadAllConfigs(): Map<ConfigSource, ConfigJson> {
 	const project = loadJsonFile(paths.project);
 	if (project) configs.set("project", project);
 
-	const user = loadJsonFile(paths.user);
+	const user = loadJsonFile(paths.user) ?? loadJsonFile(paths.userLegacy);
 	if (user) configs.set("user", user);
 
 	return configs;

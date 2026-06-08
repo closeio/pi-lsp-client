@@ -65,3 +65,21 @@ describe("LSP_INSTALL_HINTS", () => {
 		expect(LSP_INSTALL_HINTS["typescript"]).toContain("typescript-language-server");
 	});
 });
+
+describe("pyrefly builtin", () => {
+	it("#given pyrefly is a builtin #when looking it up #then uses 'pyrefly lsp' for .py/.pyi", () => {
+		// given
+		const pyrefly = BUILTIN_SERVERS["pyrefly"];
+		if (!pyrefly) throw new Error("expected pyrefly server");
+
+		// when / then
+		expect(pyrefly.command).toEqual(["pyrefly", "lsp"]);
+		expect(pyrefly.extensions).toEqual([".py", ".pyi"]);
+	});
+
+	it("#given pyrefly auto-install recipe #when checking registry #then it pip-installs pyrefly", () => {
+		// given / when / then
+		expect(AUTO_INSTALLABLE_SERVERS["pyrefly"]).toEqual(["pip", "install", "pyrefly"]);
+		expect(LSP_INSTALL_HINTS["pyrefly"]).toBe("pip install pyrefly");
+	});
+});
