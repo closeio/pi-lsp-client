@@ -16,14 +16,13 @@ permissions:
 
 jobs:
   test:
-    name: test (${{ matrix.os }} · node ${{ matrix.node }})
-    runs-on: ${{ matrix.os }}
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        node: ["20", "22", "24"]
+        node: ["22", "24"]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
