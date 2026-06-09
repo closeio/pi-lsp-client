@@ -177,6 +177,38 @@ export class LspClientTransport {
 		return this.proc !== null && !this.processExited && this.proc.exitCode === null;
 	}
 
+	/**
+	 * Synchronously kill the underlying LSP child process tree.
+	 *
+	 * Intended for last-resort cleanup paths where async work cannot run to
+	 * completion — specifically the `process.on("exit", …)` handler installed
+	 * by `LspManager`. `process.on("exit")` is synchronous-only: any awaits
+	 * inside it are silently dropped, so `await stop()` never sends SIGTERM and
+	 * because we spawn children with `detached: true` they get reparented to
+	 * init and block on epoll_wait against a closed stdin pipe forever.
+	 *
+	 * This method:
+	 *   - does NOT send LSP `shutdown` / `exit` (those require async IO)
+	 *   - does NOT dispose the JSON-RPC connection (that would queue async work)
+	 *   - DOES synchronously deliver SIGTERM to the entire child process group
+	 *     via the platform-appropriate kill in `process.ts`
+	 *
+	 * For graceful cleanup, prefer `stop()`.
+	 */
+	killSync(): void {
+		const proc = this.proc;
+		if (!proc) {
+			this.processExited = true;
+			return;
+		}
+		this.proc = null;
+		this.processExited = true;
+		try {
+			proc.kill("SIGTERM");
+		} catch {}
+		this.diagnosticsStore.clear();
+	}
+
 	async stop(): Promise<void> {
 		if (this.connection) {
 			try {

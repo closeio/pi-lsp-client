@@ -15,6 +15,7 @@ export class FakeLspClient extends LspClient {
 	startCallCount = 0;
 	initializeCallCount = 0;
 	stopCallCount = 0;
+	killSyncCallCount = 0;
 
 	constructor(
 		root: string,
@@ -60,6 +61,11 @@ export class FakeLspClient extends LspClient {
 		if (this.opts.stopDelayMs !== undefined) {
 			await new Promise((r) => setTimeout(r, this.opts.stopDelayMs));
 		}
+		this.aliveFlag = false;
+	}
+
+	override killSync(): void {
+		this.killSyncCallCount++;
 		this.aliveFlag = false;
 	}
 
