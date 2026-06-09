@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Spawned LSP children no longer keep the parent's Node event loop alive.
+  `spawnProcess` now calls `proc.unref()` and `unref()` on each stdio pipe.
+  Without this, an LSP client owned by a fan-out sub-agent session (whose
+  `session_shutdown` event never fires under the current pi SDK) would
+  prevent pi from exiting after its main work was done, because the LSP
+  child's stdio pipes registered as active handles on the loop.
+
 ### Changed
 
 - **Breaking (internal):** the module-level `LspManager` singleton is gone.
