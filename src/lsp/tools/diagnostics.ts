@@ -8,6 +8,7 @@ import { DEFAULT_MAX_DIAGNOSTICS } from "../constants.js";
 import { aggregateDiagnosticsForDirectory } from "../directory-diagnostics.js";
 import { filterDiagnosticsBySeverity, formatDiagnostic } from "../formatters.js";
 import { inferExtensionFromDirectory } from "../infer-extension.js";
+import { getManagerForSession } from "../manager-registry.js";
 import type { Diagnostic, SeverityFilter } from "../types.js";
 import { handleMissingDependencyError } from "../utils.js";
 
@@ -44,7 +45,8 @@ export const lsp_diagnostics = defineTool({
 		"Get errors, warnings, and hints from the language server BEFORE running build. " +
 		"Works for both single files and directories - file extension is auto-detected for directories.",
 	parameters: Params,
-	async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			const absPath = resolve(params.filePath);
 			const severity = params.severity as SeverityFilter | undefined;
@@ -69,7 +71,7 @@ export const lsp_diagnostics = defineTool({
 					};
 				}
 
-				const text = await aggregateDiagnosticsForDirectory(absPath, extension, severity);
+				const text = await aggregateDiagnosticsForDirectory(manager, absPath, extension, severity);
 				const details: LspDiagnosticsDetails = {
 					filePath: params.filePath,
 					severity: severity ?? "all",
@@ -88,7 +90,7 @@ export const lsp_diagnostics = defineTool({
 				params.filePath,
 				async (client) => client.diagnostics(params.filePath),
 				"diagnostics",
-				signal === undefined ? {} : { signal },
+				{ manager, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			let diagnostics = asArray(result);

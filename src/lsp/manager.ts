@@ -362,20 +362,3 @@ export class LspManager {
 		await Promise.allSettled(stopPromises);
 	}
 }
-
-let _defaultInstance: LspManager | null = null;
-
-export function getLspManager(): LspManager {
-	if (!_defaultInstance) {
-		_defaultInstance = new LspManager();
-	}
-	return _defaultInstance;
-}
-
-export async function disposeDefaultLspManager(): Promise<void> {
-	if (_defaultInstance) {
-		const m = _defaultInstance;
-		_defaultInstance = null;
-		await m.stopAll();
-	}
-}

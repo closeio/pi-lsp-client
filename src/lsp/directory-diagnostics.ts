@@ -4,7 +4,7 @@ import { findWorkspaceRoot, formatServerLookupError } from "./client-wrapper.js"
 import { DEFAULT_MAX_DIAGNOSTICS, DEFAULT_MAX_DIRECTORY_FILES } from "./constants.js";
 import { LspInvalidPathError, LspServerLookupError } from "./errors.js";
 import { filterDiagnosticsBySeverity, formatDiagnostic } from "./formatters.js";
-import { getLspManager } from "./manager.js";
+import type { LspManager } from "./manager.js";
 import { findServerForExtension } from "./server-resolution.js";
 import type { Diagnostic, SeverityFilter } from "./types.js";
 
@@ -57,6 +57,7 @@ function collectFilesWithExtension(dir: string, extension: string, maxFiles: num
 }
 
 export async function aggregateDiagnosticsForDirectory(
+	manager: LspManager,
 	directory: string,
 	extension: string,
 	severity?: SeverityFilter,
@@ -93,7 +94,6 @@ export async function aggregateDiagnosticsForDirectory(
 	}
 
 	const root = findWorkspaceRoot(absDir);
-	const manager = getLspManager();
 	const allDiagnostics: FileDiagnostic[] = [];
 	const fileErrors: { file: string; error: string }[] = [];
 

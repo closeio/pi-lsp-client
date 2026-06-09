@@ -3,6 +3,7 @@ import { Type } from "typebox";
 
 import { withLspClient } from "../client-wrapper.js";
 import { formatApplyResult, formatPrepareRenameResult } from "../formatters.js";
+import { getManagerForSession } from "../manager-registry.js";
 import type { PrepareRenameDefaultBehavior, PrepareRenameResult, Range, WorkspaceEdit } from "../types.js";
 import { handleMissingDependencyError } from "../utils.js";
 import { type ApplyResult, applyWorkspaceEdit } from "../workspace-edit.js";
@@ -45,13 +46,14 @@ export const lsp_prepare_rename = defineTool({
 	label: "LSP Prepare Rename",
 	description: "Check if rename is valid at a given position. Use BEFORE lsp_rename.",
 	parameters: PrepareParams,
-	async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			const result = await withLspClient<PrepareRenameResult | PrepareRenameDefaultBehavior | Range | null>(
 				params.filePath,
 				async (client) => client.prepareRename(params.filePath, params.line, params.character),
 				"prepareRename",
-				signal === undefined ? {} : { signal },
+				{ manager, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			const text = formatPrepareRenameResult(result);
@@ -90,13 +92,14 @@ export const lsp_rename = defineTool({
 	description: "Rename symbol across the entire workspace. APPLIES changes to all files.",
 	parameters: RenameParams,
 	executionMode: "sequential",
-	async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			const edit = await withLspClient<WorkspaceEdit | null>(
 				params.filePath,
 				async (client) => client.rename(params.filePath, params.line, params.character, params.newName),
 				"rename",
-				signal === undefined ? {} : { signal },
+				{ manager, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			const apply = applyWorkspaceEdit(edit);

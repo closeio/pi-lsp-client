@@ -9,7 +9,7 @@ import {
 	LspServerInitializingError,
 	LspServerLookupError,
 } from "./errors.js";
-import { getLspManager, type LspManager } from "./manager.js";
+import type { LspManager } from "./manager.js";
 import { findServerForExtension } from "./server-resolution.js";
 import type { ServerLookupResult } from "./types.js";
 
@@ -83,7 +83,12 @@ export function formatServerLookupError(result: Exclude<ServerLookupResult, { st
 
 export interface WithLspClientOptions {
 	signal?: AbortSignal;
-	manager?: LspManager;
+	/**
+	 * The session-scoped LspManager. Required - callers should obtain it
+	 * via `getManagerForSession(ctx.sessionManager)` so each pi session
+	 * owns its own LSP server pool.
+	 */
+	manager: LspManager;
 }
 
 const READ_ONLY_RETRY_TOOLS = new Set([
@@ -99,7 +104,7 @@ export async function withLspClient<T>(
 	filePath: string,
 	fn: (client: LspClient) => Promise<T>,
 	toolName: string,
-	options: WithLspClientOptions = {},
+	options: WithLspClientOptions,
 ): Promise<T> {
 	const absPath = resolve(filePath);
 
@@ -118,7 +123,7 @@ export async function withLspClient<T>(
 
 	const server = result.server;
 	const root = findWorkspaceRoot(absPath);
-	const manager = options.manager ?? getLspManager();
+	const manager = options.manager;
 
 	const acquireAndCall = async (allowRetry: boolean): Promise<T> => {
 		const client = await manager.getClient(root, server, options.signal);

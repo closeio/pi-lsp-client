@@ -3,6 +3,7 @@ import { Type } from "typebox";
 
 import { withLspClient } from "../client-wrapper.js";
 import { formatLocation } from "../formatters.js";
+import { getManagerForSession } from "../manager-registry.js";
 import type { Location, LocationLink } from "../types.js";
 import { handleMissingDependencyError } from "../utils.js";
 
@@ -26,13 +27,14 @@ export const lsp_goto_definition = defineTool({
 	label: "LSP Goto Definition",
 	description: "Jump to symbol definition. Find WHERE something is defined.",
 	parameters: Params,
-	async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			const result = await withLspClient<Location | LocationLink | Array<Location | LocationLink> | null>(
 				params.filePath,
 				async (client) => client.definition(params.filePath, params.line, params.character),
 				"definition",
-				signal === undefined ? {} : { signal },
+				{ manager, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			const locations = !result ? [] : Array.isArray(result) ? result : [result];

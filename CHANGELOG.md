@@ -7,12 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (internal):** the module-level `LspManager` singleton is gone.
+  Each pi session now owns its own `LspManager`, resolved via
+  `getManagerForSession(ctx.sessionManager)` from the new
+  `manager-registry.js` module. `withLspClient` requires the manager to be
+  passed explicitly via `options.manager` (previously fell back to a
+  process-wide singleton). This eliminates a class of cross-session bugs
+  where one session's `session_shutdown` could `stopAll()` LSP servers
+  another concurrent sub-agent session was still using. The per-manager
+  refCount, idle reaper, init timeout, and synchronous `process.on("exit")`
+  killSync handler all continue to apply, but at session scope. Disposal
+  on `session_shutdown` is the one and only caller-initiated teardown path;
+  the exit handler remains as belt-and-suspenders for crashes.
+
 ### Added
 
 - Initial release porting omo's LSP tool stack as a pi-coding-agent extension.
 - Six tools: `lsp_diagnostics`, `lsp_goto_definition`, `lsp_find_references`,
   `lsp_symbols`, `lsp_prepare_rename`, `lsp_rename`.
-- Shared `LspManager` singleton with refCount-based lifecycle, idle cleanup
+- Per-session `LspManager` with refCount-based lifecycle, idle cleanup
   (5 minutes), init reaping (60 seconds), and abort-aware acquisition.
 - Typed crash boundary: `LspConnectionClosedError` and
   `LspProcessExitedError` in `errors.ts`. The wrapper retries idempotent read
