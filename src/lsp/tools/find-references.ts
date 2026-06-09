@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { withLspClient } from "../client-wrapper.js";
 import { DEFAULT_MAX_REFERENCES } from "../constants.js";
 import { formatLocation } from "../formatters.js";
+import { getManagerForSession } from "../manager-registry.js";
 import type { Location } from "../types.js";
 import { handleMissingDependencyError } from "../utils.js";
 
@@ -30,14 +31,15 @@ export const lsp_find_references = defineTool({
 	label: "LSP Find References",
 	description: "Find ALL usages/references of a symbol across the entire workspace.",
 	parameters: Params,
-	async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			const result = await withLspClient<Location[]>(
 				params.filePath,
 				async (client) =>
 					client.references(params.filePath, params.line, params.character, params.includeDeclaration ?? true),
 				"references",
-				signal === undefined ? {} : { signal },
+				{ manager, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			const all = Array.isArray(result) ? result : [];

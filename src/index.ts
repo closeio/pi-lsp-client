@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 
 import { LspInspectorComponent } from "./lsp/inspector.js";
-import { disposeDefaultLspManager, getLspManager } from "./lsp/manager.js";
+import { disposeManagerForSession, getManagerForSession } from "./lsp/manager-registry.js";
 import {
 	appendPostEditDiagnostics,
 	POST_EDIT_DIAGNOSTICS_WIDGET_KEY,
@@ -58,10 +58,13 @@ export interface PostEditToolResultRegistrar {
 /**
  * pi-lsp-client — Language Server Protocol integration for the pi coding agent.
  *
- * Ports omo's LSP tool stack as a pi extension. Provides a shared LspManager
- * with refCount-based lifecycle, idle cleanup (5min), init reaping (60s),
- * typed crash retry for read tools, and a `/lsp` inspector backed by an
- * explicit getSnapshot() API.
+ * Ports omo's LSP tool stack as a pi extension. Each pi session owns its own
+ * `LspManager` (resolved via `getManagerForSession(ctx.sessionManager)`),
+ * with refCount-based client lifecycle, idle cleanup (5min), init reaping
+ * (60s), typed crash retry for read tools, and a `/lsp` inspector backed by
+ * an explicit getSnapshot() API. Session scoping means concurrent sub-agent
+ * sessions in one Node process never share clients - one session's
+ * `session_shutdown` cannot dispose servers another session still holds.
  *
  * Tools registered:
  *   - lsp_diagnostics      — errors/warnings/info from language servers
@@ -80,8 +83,6 @@ export interface PostEditToolResultRegistrar {
  * See README.md for installation and usage.
  */
 export default function (pi: ExtensionAPI): void {
-	const manager = getLspManager();
-
 	pi.registerTool({
 		...lsp_diagnostics,
 		renderCall: (args, theme) => renderDiagnosticsCall(args as never, theme),
@@ -125,7 +126,7 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	const updateStatus = (ctx: ExtensionContext): void => {
-		const snapshots = manager.getSnapshot();
+		const snapshots = getManagerForSession(ctx.sessionManager).getSnapshot();
 		const ui = ctx.ui;
 		if (snapshots.length === 0) {
 			ui.setStatus(STATUS_KEY, undefined);
@@ -153,7 +154,7 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("session_shutdown", async (_event, ctx) => {
 		ctx.ui.setStatus(STATUS_KEY, undefined);
 		ctx.ui.setWidget(POST_EDIT_DIAGNOSTICS_WIDGET_KEY, undefined);
-		await disposeDefaultLspManager();
+		await disposeManagerForSession(ctx.sessionManager);
 	});
 
 	pi.registerCommand("lsp", {
@@ -191,6 +192,7 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 
+			const manager = getManagerForSession(ctx.sessionManager);
 			if (!ctx.hasUI) {
 				const snapshots = manager.getSnapshot();
 				const summary =
@@ -288,7 +290,7 @@ function runWarmup(id: string, ctx: ExtensionContext): void {
 	}
 
 	try {
-		const manager = getLspManager();
+		const manager = getManagerForSession(ctx.sessionManager);
 		manager.warmupClient(ctx.cwd, {
 			id,
 			command: def.command,

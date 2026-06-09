@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { withLspClient } from "../client-wrapper.js";
 import { DEFAULT_MAX_SYMBOLS } from "../constants.js";
 import { formatDocumentSymbol, formatSymbolInfo } from "../formatters.js";
+import { getManagerForSession } from "../manager-registry.js";
 import type { DocumentSymbol, SymbolInfo } from "../types.js";
 import { handleMissingDependencyError } from "../utils.js";
 
@@ -39,8 +40,9 @@ export const lsp_symbols = defineTool({
 		"Get symbols from a file (document) or search across the workspace. " +
 		"Use scope='document' for a file outline, scope='workspace' for project-wide symbol search.",
 	parameters: Params,
-	async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 		const scope = params.scope as "document" | "workspace";
+		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			if (scope === "workspace") {
 				if (!params.query) {
@@ -65,7 +67,7 @@ export const lsp_symbols = defineTool({
 					params.filePath,
 					async (client) => client.workspaceSymbols(query),
 					"workspaceSymbols",
-					signal === undefined ? {} : { signal },
+					{ manager, ...(signal === undefined ? {} : { signal }) },
 				);
 
 				const all = result;
@@ -110,7 +112,7 @@ export const lsp_symbols = defineTool({
 				params.filePath,
 				async (client) => client.documentSymbols(params.filePath),
 				"documentSymbols",
-				signal === undefined ? {} : { signal },
+				{ manager, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			const all = result;

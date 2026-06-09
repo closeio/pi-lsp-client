@@ -37,6 +37,17 @@ export function validateCwd(cwd: string): { valid: boolean; error?: string } {
 	}
 }
 
+function unrefStream(stream: unknown): void {
+	// Child stdio pipes are Socket-backed on Unix and IPC handle-backed on
+	// Windows; both implement unref() at runtime, but the Readable / Writable
+	// static types don't expose it. Feature-detect rather than cast to `any`
+	// so the call is a no-op on platforms / Node versions where it doesn't
+	// exist.
+	if (stream && typeof (stream as { unref?: () => void }).unref === "function") {
+		(stream as { unref: () => void }).unref();
+	}
+}
+
 function wrap(proc: ChildProcess): SpawnedProcess {
 	const exitedPromise = new Promise<number>((resolve) => {
 		proc.once("close", (code) => resolve(code ?? 0));
@@ -104,6 +115,20 @@ export function spawnProcess(command: string[], options: SpawnOptions): SpawnedP
 		shell: process.platform === "win32",
 		detached: process.platform !== "win32",
 	});
+
+	// Unref the child and its stdio so the LSP subprocess never keeps pi's
+	// event loop alive. Without this, a session that spawned an LSP server
+	// but isn't itself a top-level pi session (e.g. a fan-out sub-agent via
+	// `runAgent` / `createAgentSession`) leaves the LspManager rooted by its
+	// process.on("exit") handler, while the child's stdio pipes register as
+	// active handles on the loop.
+	// Unreffing makes the child invisible to the loop's keep-alive
+	// accounting; the killSync handler still fires on actual exit and reaps
+	// the child via SIGTERM to its process group.
+	proc.unref();
+	unrefStream(proc.stdin);
+	unrefStream(proc.stdout);
+	unrefStream(proc.stderr);
 
 	return wrap(proc);
 }

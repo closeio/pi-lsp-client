@@ -326,4 +326,27 @@ describe("LspManager", () => {
 		// when / then
 		await expect(manager.getClient("/root/a", makeServer("typescript"))).rejects.toThrow(/disposed/i);
 	});
+
+	it("#given live LSP children #when process emits 'exit' #then children are killed synchronously", async () => {
+		// given
+		const { manager, clients } = setupManager();
+		await manager.getClient("/root/a", makeServer("typescript"));
+		await manager.getClient("/root/b", makeServer("typescript"));
+		expect(clients.length).toBe(2);
+		expect(clients[0]?.killSyncCallCount).toBe(0);
+		expect(clients[1]?.killSyncCallCount).toBe(0);
+
+		// when: simulate Node firing 'exit' — handlers MUST be sync
+		process.emit("exit", 0);
+
+		// then: every managed child saw a synchronous kill, not async stop
+		expect(clients[0]?.killSyncCallCount).toBe(1);
+		expect(clients[1]?.killSyncCallCount).toBe(1);
+		expect(clients[0]?.stopCallCount).toBe(0);
+		expect(clients[1]?.stopCallCount).toBe(0);
+		expect(manager.clientCount()).toBe(0);
+
+		// cleanup so other tests in this file don't see the listener
+		await manager.stopAll();
+	});
 });

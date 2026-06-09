@@ -1,6 +1,6 @@
 # pi-lsp-client
 
-Language Server Protocol integration for the [pi coding agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent). Faithful port of the LSP tool stack from [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent), with shared server pool, refCount lifecycle, idle reaping, typed crash retry, and a `/lsp` inspector.
+Language Server Protocol integration for the [pi coding agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent). Faithful port of the LSP tool stack from [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent), with per-session server pool, refCount lifecycle, idle reaping, typed crash retry, and a `/lsp` inspector.
 
 ## Origin
 
@@ -125,7 +125,7 @@ Apply a rename across the workspace. Mutates files. Runs `executionMode: "sequen
 
 ### `/lsp`
 
-Interactive inspector for the active server pool. Shows server id, root, refCount, pendingWaiters, lastUsedAt, isInitializing, alive, and command. Press `Escape` or `Ctrl-C` to close. In non-interactive mode (no TUI), prints a one-line summary instead.
+Interactive inspector for the current session's server pool. Shows server id, root, refCount, pendingWaiters, lastUsedAt, isInitializing, alive, and command. Press `Escape` or `Ctrl-C` to close. In non-interactive mode (no TUI), prints a one-line summary instead.
 
 ### `/lsp status`
 
@@ -180,14 +180,15 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
 
 ## Lifecycle
 
+- **Per-session managers.** Each pi session owns its own `LspManager`, resolved lazily on first use via `getManagerForSession(ctx.sessionManager)` from `manager-registry.js`. Concurrent sub-agent sessions in one Node process do not share clients - one session's `session_shutdown` cannot dispose servers another session is still using. Managers are keyed by reference identity of `ctx.sessionManager` in a `WeakMap`, so a forgotten session is GC-safe.
 - **Lazy spawn.** Servers spawn on first tool call for a matching extension. No eager warmup of the entire registry.
 - **Refcount.** Each `withLspClient(...)` call increments refCount on entry and decrements in `finally`. Idle reaping fires only when refCount hits zero AND lastUsedAt is older than the idle timeout.
 - **Idle timeout: 5 minutes.** Idle clients are stopped and removed from the pool.
 - **Init timeout: 60 seconds.** A pending init older than 60s is reaped, even if other callers are waiting on it.
 - **Abort-aware acquisition.** `getClient(root, server, signal?)` participates in tool cancellation. If the signal aborts before init resolves, the caller is removed from the waiter list; if no callers remain, the initializing client is stopped and removed.
 - **Crash retry.** When the JSON-RPC transport throws `LspConnectionClosedError` or `LspProcessExitedError` mid-call, the wrapper evicts the dead client and retries exactly once for idempotent read tools (`diagnostics`, `goto_definition`, `find_references`, `symbols`, `prepare_rename`). Mutating tools (`rename`) are never retried.
-- **Session shutdown is the primary cleanup boundary.** `pi.on("session_shutdown", ...)` calls `disposeDefaultLspManager()` (stops all clients, clears the reaper interval, unregisters the process exit fallback) and clears `pi-lsp` status/widget keys.
-- **No raw signal handlers.** No `SIGINT`/`SIGTERM` listeners — those would fight pi's TUI shutdown. Just `process.once("exit", ...)` as a sync fallback for unexpected exits, and the disposer is called from `session_shutdown` so the listener count never grows across `/reload`.
+- **Session shutdown is the primary cleanup boundary.** `pi.on("session_shutdown", ...)` calls `disposeManagerForSession(ctx.sessionManager)` - stops that session's clients, clears its reaper interval, unregisters its process exit fallback, and clears `pi-lsp` status/widget keys. Other sessions' managers are untouched.
+- **No raw signal handlers.** No `SIGINT`/`SIGTERM` listeners — those would fight pi's TUI shutdown. Each manager registers a synchronous `process.on("exit", ...)` `killSync` handler as a sync fallback for unexpected exits; the disposer removes that handler so listener count doesn't grow across `/reload`.
 
 ## Cross-Platform Notes
 

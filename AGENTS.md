@@ -25,8 +25,13 @@ Conventions for human contributors and AI agents working on this repository.
 
 - No Bun APIs. Runtime is Node only. The transport layer uses
   `node:child_process.spawn` and native Node streams.
-- LSP server processes are managed exclusively by `LspManager`. Tools acquire
-  via `withLspClient(...)` and the wrapper handles refCount + retry.
+- LSP server processes are managed exclusively by `LspManager`. There is one
+  `LspManager` instance **per pi session**, resolved via
+  `getManagerForSession(ctx.sessionManager)` in `manager-registry.ts`. Tools
+  acquire via `withLspClient(..., { manager, signal })` and the wrapper
+  handles refCount + retry. Never reintroduce a process-wide singleton -
+  one session's `session_shutdown` would dispose servers other concurrent
+  sub-agent sessions are still using.
 - `lsp_rename` runs with `executionMode: "sequential"` because it mutates
   files via a workspace edit spanning arbitrary paths.
 - No raw `SIGINT`/`SIGTERM` handlers. Cleanup happens via
@@ -49,3 +54,7 @@ Conventions for human contributors and AI agents working on this repository.
 - Don't bypass the manager's refCount accounting. Always acquire via
   `withLspClient` (or `manager.getClient` + `releaseClient` paired in a
   `finally`) so idle reaping and shutdown work correctly.
+- Don't resolve the manager from anywhere except `ctx.sessionManager` in a
+  tool / command / event handler. There is no module-level `getLspManager()`
+  any more; trying to grab a manager at activate-time (closure) would silently
+  capture the wrong session in multi-session hosts.

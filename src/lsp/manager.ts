@@ -96,10 +96,17 @@ export class LspManager {
 	}
 
 	private installProcessExitHandler(): void {
+		// `process.on("exit", ...)` runs synchronously — awaits inside it are
+		// silently dropped. Calling the async `client.stop()` from here never
+		// reached `proc.kill()` in practice, so LSP children spawned with
+		// `detached: true` (see process.ts) survived parent exit, were reparented
+		// to init, and blocked in epoll_wait on their now-closed stdin pipe. Use
+		// the synchronous `killSync()` instead so SIGTERM is delivered to the
+		// child process group before this Node process tears down.
 		const handler = () => {
 			for (const managed of this.clients.values()) {
 				try {
-					managed.client.stop().catch(() => {});
+					managed.client.killSync();
 				} catch {}
 			}
 			this.clients.clear();
@@ -353,22 +360,5 @@ export class LspManager {
 		}
 		this.clients.clear();
 		await Promise.allSettled(stopPromises);
-	}
-}
-
-let _defaultInstance: LspManager | null = null;
-
-export function getLspManager(): LspManager {
-	if (!_defaultInstance) {
-		_defaultInstance = new LspManager();
-	}
-	return _defaultInstance;
-}
-
-export async function disposeDefaultLspManager(): Promise<void> {
-	if (_defaultInstance) {
-		const m = _defaultInstance;
-		_defaultInstance = null;
-		await m.stopAll();
 	}
 }
