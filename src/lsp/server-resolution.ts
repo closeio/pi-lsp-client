@@ -1,7 +1,25 @@
+import { extname } from "node:path";
+
 import { getDisabledServerIds, getMergedServers } from "./config-loader.js";
 import { BUILTIN_SERVERS, LSP_INSTALL_HINTS } from "./server-definitions.js";
 import { isServerInstalled } from "./server-installation.js";
 import type { ServerLookupResult } from "./types.js";
+
+/**
+ * Resolve the LSP server id for a file path so callers (renderers,
+ * progress emitters) can surface which server will service the request.
+ * Returns `null` when the path has no recognizable extension (e.g. the
+ * directory paths `lsp_diagnostics` accepts) or when no server is
+ * configured for that extension. Cheap: under the hood,
+ * `findServerForExtension` reads at most two small JSON config files.
+ */
+export function resolveServerIdForPath(filePath: string): string | null {
+	const ext = extname(filePath);
+	if (!ext) return null;
+	const result = findServerForExtension(ext);
+	if (result.status === "not_configured") return null;
+	return result.server.id;
+}
 
 export function findServerForExtension(ext: string): ServerLookupResult {
 	const servers = getMergedServers();

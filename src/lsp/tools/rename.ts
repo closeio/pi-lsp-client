@@ -46,14 +46,14 @@ export const lsp_prepare_rename = defineTool({
 	label: "LSP Prepare Rename",
 	description: "Check if rename is valid at a given position. Use BEFORE lsp_rename.",
 	parameters: PrepareParams,
-	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			const result = await withLspClient<PrepareRenameResult | PrepareRenameDefaultBehavior | Range | null>(
 				params.filePath,
 				async (client) => client.prepareRename(params.filePath, params.line, params.character),
 				"prepareRename",
-				{ manager, ...(signal === undefined ? {} : { signal }) },
+				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			const text = formatPrepareRenameResult(result);
@@ -92,14 +92,14 @@ export const lsp_rename = defineTool({
 	description: "Rename symbol across the entire workspace. APPLIES changes to all files.",
 	parameters: RenameParams,
 	executionMode: "sequential",
-	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			const edit = await withLspClient<WorkspaceEdit | null>(
 				params.filePath,
 				async (client) => client.rename(params.filePath, params.line, params.character, params.newName),
 				"rename",
-				{ manager, ...(signal === undefined ? {} : { signal }) },
+				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			const apply = applyWorkspaceEdit(edit);

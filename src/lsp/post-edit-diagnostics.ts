@@ -5,6 +5,7 @@ export type DiagnosticsRunner = (filePath: string) => Promise<string>;
 const MUTATION_TOOL_NAMES = new Set(["write", "edit", "apply_patch"]);
 const CLEAN_DIAGNOSTICS_TEXT = "No diagnostics found";
 const UNSUPPORTED_EXTENSION_TEXT = "No LSP server configured for extension:";
+const SERVER_NOT_INSTALLED_TEXT = "is configured but NOT INSTALLED.";
 export const POST_EDIT_DIAGNOSTICS_WIDGET_KEY = "pi-lsp";
 
 type WidgetPlacement = "aboveEditor" | "belowEditor";
@@ -56,7 +57,8 @@ function isCleanPostEditDiagnostics(diagnostics: string): boolean {
 	return (
 		diagnostics.length === 0 ||
 		diagnostics === CLEAN_DIAGNOSTICS_TEXT ||
-		diagnostics.startsWith(UNSUPPORTED_EXTENSION_TEXT)
+		diagnostics.startsWith(UNSUPPORTED_EXTENSION_TEXT) ||
+		diagnostics.includes(SERVER_NOT_INSTALLED_TEXT)
 	);
 }
 

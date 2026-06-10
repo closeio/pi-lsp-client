@@ -27,14 +27,14 @@ export const lsp_goto_definition = defineTool({
 	label: "LSP Goto Definition",
 	description: "Jump to symbol definition. Find WHERE something is defined.",
 	parameters: Params,
-	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			const result = await withLspClient<Location | LocationLink | Array<Location | LocationLink> | null>(
 				params.filePath,
 				async (client) => client.definition(params.filePath, params.line, params.character),
 				"definition",
-				{ manager, ...(signal === undefined ? {} : { signal }) },
+				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			const locations = !result ? [] : Array.isArray(result) ? result : [result];
