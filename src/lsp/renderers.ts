@@ -1,11 +1,9 @@
-import { extname } from "node:path";
-
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 
 import { uriToPath } from "./formatters.js";
 import { SYMBOL_KIND_MAP } from "./language-mappings.js";
-import { findServerForExtension } from "./server-resolution.js";
+import { resolveServerIdForPath } from "./server-resolution.js";
 import type { LspDiagnosticsDetails } from "./tools/diagnostics.js";
 import type { LspFindReferencesDetails } from "./tools/find-references.js";
 import type { LspGotoDefinitionDetails } from "./tools/goto-definition.js";
@@ -13,19 +11,6 @@ import type { LspPrepareRenameDetails, LspRenameDetails } from "./tools/rename.j
 import type { LspSymbolsDetails } from "./tools/symbols.js";
 import type { Diagnostic, DocumentSymbol, Location, LocationLink, SymbolInfo } from "./types.js";
 import { shorten } from "./utils.js";
-
-// Resolve the LSP server id for a file path so call rendering can surface
-// which server is about to be (or was) used. Returns null when the path has
-// no recognizable extension (e.g. directory paths used by lsp_diagnostics) or
-// when no server is configured for it. Cheap: findServerForExtension reads at
-// most two small JSON config files.
-function resolveServerIdForPath(filePath: string): string | null {
-	const ext = extname(filePath);
-	if (!ext) return null;
-	const result = findServerForExtension(ext);
-	if (result.status === "not_configured") return null;
-	return result.server.id;
-}
 
 function serverBadge(filePath: string, theme: Theme): string {
 	const id = resolveServerIdForPath(filePath);

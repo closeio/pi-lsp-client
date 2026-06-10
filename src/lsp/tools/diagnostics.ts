@@ -45,7 +45,7 @@ export const lsp_diagnostics = defineTool({
 		"Get errors, warnings, and hints from the language server BEFORE running build. " +
 		"Works for both single files and directories - file extension is auto-detected for directories.",
 	parameters: Params,
-	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			const absPath = resolve(params.filePath);
@@ -90,7 +90,7 @@ export const lsp_diagnostics = defineTool({
 				params.filePath,
 				async (client) => client.diagnostics(params.filePath),
 				"diagnostics",
-				{ manager, ...(signal === undefined ? {} : { signal }) },
+				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			let diagnostics = asArray(result);

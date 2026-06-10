@@ -40,7 +40,7 @@ export const lsp_symbols = defineTool({
 		"Get symbols from a file (document) or search across the workspace. " +
 		"Use scope='document' for a file outline, scope='workspace' for project-wide symbol search.",
 	parameters: Params,
-	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		const scope = params.scope as "document" | "workspace";
 		const manager = getManagerForSession(ctx.sessionManager);
 		try {
@@ -67,7 +67,7 @@ export const lsp_symbols = defineTool({
 					params.filePath,
 					async (client) => client.workspaceSymbols(query),
 					"workspaceSymbols",
-					{ manager, ...(signal === undefined ? {} : { signal }) },
+					{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 				);
 
 				const all = result;
@@ -112,7 +112,7 @@ export const lsp_symbols = defineTool({
 				params.filePath,
 				async (client) => client.documentSymbols(params.filePath),
 				"documentSymbols",
-				{ manager, ...(signal === undefined ? {} : { signal }) },
+				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			const all = result;

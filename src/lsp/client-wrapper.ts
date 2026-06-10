@@ -89,6 +89,18 @@ export interface WithLspClientOptions {
 	 * owns its own LSP server pool.
 	 */
 	manager: LspManager;
+	/**
+	 * Pi's `onUpdate` callback for the calling tool. When provided, fires
+	 * a `tool_execution_update` with `{ lspServer: { id } }` once the
+	 * server is resolved, so progress formatters can inline the server id
+	 * into the per-call log line (e.g. `lsp_symbols (ty): query`). The
+	 * callback's actual type from pi is
+	 * `AgentToolUpdateCallback<TDetails>`, which structurally expects a
+	 * full `AgentToolResult<TDetails>`; the runtime event delivery only
+	 * needs the partial payload sent here, so the parameter is typed as
+	 * `unknown` and the call is cast.
+	 */
+	onUpdate?: unknown;
 }
 
 const READ_ONLY_RETRY_TOOLS = new Set([
@@ -124,6 +136,9 @@ export async function withLspClient<T>(
 	const server = result.server;
 	const root = findWorkspaceRoot(absPath);
 	const manager = options.manager;
+	if (typeof options.onUpdate === "function") {
+		(options.onUpdate as (arg: unknown) => void)({ lspServer: { id: server.id } });
+	}
 
 	const acquireAndCall = async (allowRetry: boolean): Promise<T> => {
 		const client = await manager.getClient(root, server, options.signal);

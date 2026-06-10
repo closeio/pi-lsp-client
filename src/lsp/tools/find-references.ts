@@ -31,7 +31,7 @@ export const lsp_find_references = defineTool({
 	label: "LSP Find References",
 	description: "Find ALL usages/references of a symbol across the entire workspace.",
 	parameters: Params,
-	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			const result = await withLspClient<Location[]>(
@@ -39,7 +39,7 @@ export const lsp_find_references = defineTool({
 				async (client) =>
 					client.references(params.filePath, params.line, params.character, params.includeDeclaration ?? true),
 				"references",
-				{ manager, ...(signal === undefined ? {} : { signal }) },
+				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);
 
 			const all = Array.isArray(result) ? result : [];
