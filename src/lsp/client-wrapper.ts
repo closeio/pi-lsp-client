@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 
 import type { LspClient } from "./client.js";
+import { NOT_READY_RETRY_INTERVAL_MS, NOT_READY_RETRY_TIMEOUT_MS } from "./constants.js";
 import {
 	isLspDeadConnectionError,
 	LspInvalidPathError,
@@ -10,8 +11,52 @@ import {
 	LspServerLookupError,
 } from "./errors.js";
 import type { LspManager } from "./manager.js";
+import { getServerReadiness, isNotReadyError } from "./readiness.js";
 import { findServerForExtension } from "./server-resolution.js";
 import type { ServerLookupResult } from "./types.js";
+
+function abortableSleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(signal.reason ?? new Error("Aborted"));
+			return;
+		}
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(signal?.reason ?? new Error("Aborted"));
+		};
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
+// Self-heal a call that lands while the server's project/index is still loading
+// (the signal differs per server - see readiness.ts). Retries the same call on
+// the same client for a bounded window, then surfaces a clear "initializing"
+// error instead of the server's raw (often cryptic) loading error.
+async function callWithNotReadyRetry<T>(
+	client: LspClient,
+	fn: (client: LspClient) => Promise<T>,
+	serverId: string,
+	signal: AbortSignal | undefined,
+): Promise<T> {
+	const deadline = Date.now() + NOT_READY_RETRY_TIMEOUT_MS;
+	for (;;) {
+		try {
+			return await fn(client);
+		} catch (err) {
+			if (!isNotReadyError(err, serverId)) throw err;
+			if (Date.now() >= deadline) {
+				throw new LspServerInitializingError(err instanceof Error ? err : new Error(String(err)));
+			}
+			signal?.throwIfAborted();
+			await abortableSleep(NOT_READY_RETRY_INTERVAL_MS, signal);
+		}
+	}
+}
 
 const WORKSPACE_MARKERS = [".git", "package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pom.xml", "build.gradle"];
 
@@ -91,9 +136,10 @@ export interface WithLspClientOptions {
 	manager: LspManager;
 	/**
 	 * Pi's `onUpdate` callback for the calling tool. When provided, fires
-	 * a `tool_execution_update` with `{ lspServer: { id } }` once the
-	 * server is resolved, so progress formatters can inline the server id
-	 * into the per-call log line (e.g. `lsp_symbols (ty): query`). The
+	 * a `tool_execution_update` with `{ lspServer: { id }, content: [] }` once
+	 * the server is resolved, so consumers (spice records the chosen server off
+	 * the event) and progress formatters can surface it. `content: []` keeps the
+	 * payload a valid partial result for pi's TUI renderer (see call site). The
 	 * callback's actual type from pi is
 	 * `AgentToolUpdateCallback<TDetails>`, which structurally expects a
 	 * full `AgentToolResult<TDetails>`; the runtime event delivery only
@@ -137,14 +183,21 @@ export async function withLspClient<T>(
 	const root = findWorkspaceRoot(absPath);
 	const manager = options.manager;
 	if (typeof options.onUpdate === "function") {
-		(options.onUpdate as (arg: unknown) => void)({ lspServer: { id: server.id } });
+		(options.onUpdate as (arg: unknown) => void)({ lspServer: { id: server.id }, content: [] });
 	}
 
 	const acquireAndCall = async (allowRetry: boolean): Promise<T> => {
 		const client = await manager.getClient(root, server, options.signal);
 
 		try {
-			return await fn(client);
+			// Bootstrap servers whose project/program is created lazily on first
+			// `textDocument/didOpen` (typescript, vtsls) so workspace-scoped tools
+			// like workspace/symbol have a project to resolve against. openFile is
+			// idempotent for callers that open the file themselves.
+			if (getServerReadiness(server.id)?.requiresOpenFileToInitProject) {
+				await client.openFile(absPath);
+			}
+			return await callWithNotReadyRetry(client, fn, server.id, options.signal);
 		} catch (err) {
 			if (allowRetry && READ_ONLY_RETRY_TOOLS.has(toolName) && isLspDeadConnectionError(err)) {
 				manager.invalidateClient(root, server.id, client);

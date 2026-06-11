@@ -47,9 +47,12 @@ export class LspServerLookupError extends Error {
 export class LspServerInitializingError extends Error {
 	override readonly name = "LspServerInitializingError";
 
-	constructor(readonly originalError: LspRequestTimeoutError) {
+	// Accepts any error: raised both when a request times out during init
+	// (LspRequestTimeoutError) and when a server keeps reporting "still loading"
+	// (project/index not ready) past the retry budget.
+	constructor(readonly originalError: Error) {
 		super(
-			`LSP server is still initializing. Please retry in a few seconds. Original error: ${originalError.message}`,
+			`LSP server is still initializing (loading its project/index). Please retry in a few seconds. Original error: ${originalError.message}`,
 		);
 	}
 }
