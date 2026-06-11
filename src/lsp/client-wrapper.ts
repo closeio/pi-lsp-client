@@ -136,9 +136,10 @@ export interface WithLspClientOptions {
 	manager: LspManager;
 	/**
 	 * Pi's `onUpdate` callback for the calling tool. When provided, fires
-	 * a `tool_execution_update` with `{ lspServer: { id } }` once the
-	 * server is resolved, so progress formatters can inline the server id
-	 * into the per-call log line (e.g. `lsp_symbols (ty): query`). The
+	 * a `tool_execution_update` with `{ lspServer: { id }, content: [] }` once
+	 * the server is resolved, so consumers (spice records the chosen server off
+	 * the event) and progress formatters can surface it. `content: []` keeps the
+	 * payload a valid partial result for pi's TUI renderer (see call site). The
 	 * callback's actual type from pi is
 	 * `AgentToolUpdateCallback<TDetails>`, which structurally expects a
 	 * full `AgentToolResult<TDetails>`; the runtime event delivery only
@@ -182,7 +183,7 @@ export async function withLspClient<T>(
 	const root = findWorkspaceRoot(absPath);
 	const manager = options.manager;
 	if (typeof options.onUpdate === "function") {
-		(options.onUpdate as (arg: unknown) => void)({ lspServer: { id: server.id } });
+		(options.onUpdate as (arg: unknown) => void)({ lspServer: { id: server.id }, content: [] });
 	}
 
 	const acquireAndCall = async (allowRetry: boolean): Promise<T> => {
