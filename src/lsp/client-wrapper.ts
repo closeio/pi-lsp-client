@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 
 import type { LspClient } from "./client.js";
+import { NOT_READY_RETRY_INTERVAL_MS, NOT_READY_RETRY_TIMEOUT_MS } from "./constants.js";
 import {
 	isLspDeadConnectionError,
 	LspInvalidPathError,
@@ -10,8 +11,52 @@ import {
 	LspServerLookupError,
 } from "./errors.js";
 import type { LspManager } from "./manager.js";
+import { getServerReadiness, isNotReadyError } from "./readiness.js";
 import { findServerForExtension } from "./server-resolution.js";
 import type { ServerLookupResult } from "./types.js";
+
+function abortableSleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(signal.reason ?? new Error("Aborted"));
+			return;
+		}
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(signal?.reason ?? new Error("Aborted"));
+		};
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
+// Self-heal a call that lands while the server's project/index is still loading
+// (the signal differs per server - see readiness.ts). Retries the same call on
+// the same client for a bounded window, then surfaces a clear "initializing"
+// error instead of the server's raw (often cryptic) loading error.
+async function callWithNotReadyRetry<T>(
+	client: LspClient,
+	fn: (client: LspClient) => Promise<T>,
+	serverId: string,
+	signal: AbortSignal | undefined,
+): Promise<T> {
+	const deadline = Date.now() + NOT_READY_RETRY_TIMEOUT_MS;
+	for (;;) {
+		try {
+			return await fn(client);
+		} catch (err) {
+			if (!isNotReadyError(err, serverId)) throw err;
+			if (Date.now() >= deadline) {
+				throw new LspServerInitializingError(err instanceof Error ? err : new Error(String(err)));
+			}
+			signal?.throwIfAborted();
+			await abortableSleep(NOT_READY_RETRY_INTERVAL_MS, signal);
+		}
+	}
+}
 
 const WORKSPACE_MARKERS = [".git", "package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pom.xml", "build.gradle"];
 
@@ -144,7 +189,14 @@ export async function withLspClient<T>(
 		const client = await manager.getClient(root, server, options.signal);
 
 		try {
-			return await fn(client);
+			// Bootstrap servers whose project/program is created lazily on first
+			// `textDocument/didOpen` (typescript, vtsls) so workspace-scoped tools
+			// like workspace/symbol have a project to resolve against. openFile is
+			// idempotent for callers that open the file themselves.
+			if (getServerReadiness(server.id)?.requiresOpenFileToInitProject) {
+				await client.openFile(absPath);
+			}
+			return await callWithNotReadyRetry(client, fn, server.id, options.signal);
 		} catch (err) {
 			if (allowRetry && READ_ONLY_RETRY_TOOLS.has(toolName) && isLspDeadConnectionError(err)) {
 				manager.invalidateClient(root, server.id, client);
