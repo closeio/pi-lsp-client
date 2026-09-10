@@ -1,0 +1,30 @@
+# Weekly dependency updates: minor/patch bumps are grouped into one PR,
+# majors get their own individual PRs.
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 10
+    rebase-strategy: 'disabled'
+    pull-request-branch-name:
+      separator: '-'
+    cooldown:
+      # Avoid PRs for just-published versions (supply-chain risk) and let
+      # major bumps stabilize before we take them.
+      default-days: 2
+      semver-major-days: 14
+    assignees:
+      - kwilcox
+    groups:
+      # Majors are intentionally excluded to get their own PRs
+      all-dependencies:
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+    ignore:
+      - dependency-name: '@earendil-works/*'
