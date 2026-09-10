@@ -4,13 +4,14 @@
 	"description": "Language Server Protocol integration for pi-mono coding-agent. Ports omo's LSP tool stack as a pi extension with shared server pool, refCount lifecycle, idle/init reaping, typed crash retry, and a /lsp inspector.",
 	"type": "module",
 	"license": "MIT",
-	"homepage": "https://github.com/code-yeongyu/pi-lsp-client",
+	"homepage": "https://github.com/closeio/pi-lsp-client",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/code-yeongyu/pi-lsp-client.git"
+		"url": "git+https://github.com/closeio/pi-lsp-client.git"
 	},
 	"keywords": [
 		"pi",
+		"pi-package",
 		"pi-mono",
 		"pi-coding-agent",
 		"extension",

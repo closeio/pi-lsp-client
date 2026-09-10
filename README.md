@@ -1,12 +1,14 @@
 # pi-lsp-client
 
-Language Server Protocol integration for the [pi coding agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent). Faithful port of the LSP tool stack from [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent), with per-session server pool, refCount lifecycle, idle reaping, typed crash retry, and a `/lsp` inspector.
+Language Server Protocol integration for the [pi coding agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent). This fork is maintained by Close for its development environment. It provides six LSP tools, per-session server management, crash retry, and a `/lsp` inspector.
 
-## Origin
+## Fork history
 
-This package is a port of the LSP tools originally written for [oh-my-openagent (omo)](https://github.com/code-yeongyu/oh-my-openagent) by Yeongyu Kim ([@code-yeongyu](https://github.com/code-yeongyu)). The omo source for the tools lives at `src/tools/lsp/` in that repository.
+This repository is Close's maintained fork of [code-yeongyu/pi-lsp-client](https://github.com/code-yeongyu/pi-lsp-client). Close updates it for the pi versions used internally and publishes releases from `closeio/pi-lsp-client`.
 
-The same author re-licensed the ported source under MIT for distribution in the pi-coding-agent ecosystem. omo itself remains under SUL-1.0; this package's MIT scope covers only the code that ships in this repository. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+The upstream package ports LSP tools written for [oh-my-openagent (omo)](https://github.com/code-yeongyu/oh-my-openagent) by Yeongyu Kim ([@code-yeongyu](https://github.com/code-yeongyu)). The original implementation lives under `src/tools/lsp/` in that repository.
+
+Yeongyu re-licensed the ported source under MIT for the pi-coding-agent ecosystem. omo remains under SUL-1.0. The MIT license applies only to the code shipped in this repository. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 ## Quick Demo
 
@@ -36,24 +38,28 @@ Rename available at 42:7-42:13 (current: "oldFoo")
 
 ## Installation
 
-The package targets the [`pi`](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) coding agent. Pi loads extensions from `~/.pi/agent/extensions/`, project `.pi/extensions/`, or via the `--extension` / `-e` CLI flag.
-
-Pick whichever route fits:
+Install an exact release from git:
 
 ```bash
-# 1. From npm (once published)
-pi install npm:@code-yeongyu/pi-lsp-client
-
-# 2. From git (once the repository is pushed)
-pi install git:github.com/code-yeongyu/pi-lsp-client
-
-# 3. Manual placement (always works)
-git clone https://github.com/code-yeongyu/pi-lsp-client ~/.pi/agent/extensions/pi-lsp-client
-cd ~/.pi/agent/extensions/pi-lsp-client && npm install
-
-# 4. Dev / one-shot test
-pi -e /path/to/pi-lsp-client/src/index.ts
+pi install https://github.com/closeio/pi-lsp-client@v0.1.0
 ```
+
+Full version tags never move. To track the latest release within a major version,
+install its floating major tag instead:
+
+```bash
+pi install https://github.com/closeio/pi-lsp-client@v0
+pi update --extensions
+```
+
+Each release moves `v<major>` to the release commit. For example, publishing
+`v1.2.3` moves `v1`. `pi update --extensions` fetches that moved tag and resets
+the installed package to its commit. It does not change an exact `v1.2.3`
+installation.
+
+Use `pi install -l` with either form to record the package in the current
+project's `.pi/settings.json`. For development, load the checkout directly with
+`pi -e /path/to/pi-lsp-client/src/index.ts`.
 
 After installation, restart pi (or run `/reload` inside an interactive session). All six tools register automatically and become callable by the LLM.
 
@@ -188,7 +194,7 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
 - **Abort-aware acquisition.** `getClient(root, server, signal?)` participates in tool cancellation. If the signal aborts before init resolves, the caller is removed from the waiter list; if no callers remain, the initializing client is stopped and removed.
 - **Crash retry.** When the JSON-RPC transport throws `LspConnectionClosedError` or `LspProcessExitedError` mid-call, the wrapper evicts the dead client and retries exactly once for idempotent read tools (`diagnostics`, `goto_definition`, `find_references`, `symbols`, `prepare_rename`). Mutating tools (`rename`) are never retried.
 - **Session shutdown is the primary cleanup boundary.** `pi.on("session_shutdown", ...)` calls `disposeManagerForSession(ctx.sessionManager)` - stops that session's clients, clears its reaper interval, unregisters its process exit fallback, and clears `pi-lsp` status/widget keys. Other sessions' managers are untouched.
-- **No raw signal handlers.** No `SIGINT`/`SIGTERM` listeners — those would fight pi's TUI shutdown. Each manager registers a synchronous `process.on("exit", ...)` `killSync` handler as a sync fallback for unexpected exits; the disposer removes that handler so listener count doesn't grow across `/reload`.
+- **No raw signal handlers.** No `SIGINT`/`SIGTERM` listeners. They would conflict with pi's TUI shutdown. Each manager registers a synchronous `process.on("exit", ...)` `killSync` handler as a fallback for unexpected exits. The disposer removes that handler so listener count doesn't grow across `/reload`.
 
 ## Cross-Platform Notes
 
@@ -204,12 +210,12 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
 | `rust-analyzer` exited while loading `rust-src` | Run `rustup component remove rust-src` and `rustup component add rust-src` for the active toolchain, then retry the LSP tool or `/lsp warmup rust`. |
 | `lsp_rename` did not retry after a server crash | This is by design. Mutating tools never auto-retry to avoid double-applying edits. Re-issue the rename manually. |
 | Footer status stuck after `/reload` | File a bug. The `session_shutdown` handler clears `pi-lsp` status/widget keys. If they persist, the cleanup boundary was bypassed. |
-| Stale LSP child after `/reload` | Run `/lsp` to inspect the current snapshot. If `getSnapshot()` is empty but a child process is still alive, file a bug — `stopAll()` should have killed it. |
+| Stale LSP child after `/reload` | Run `/lsp` to inspect the current snapshot. If `getSnapshot()` is empty but a child process is still alive, file a bug. `stopAll()` should have killed it. |
 
 ## Development
 
 ```bash
-git clone https://github.com/code-yeongyu/pi-lsp-client
+git clone https://github.com/closeio/pi-lsp-client
 cd pi-lsp-client
 npm install            # install dev + peer dependencies
 npm test               # run vitest
@@ -220,18 +226,28 @@ pi -e ./src/index.ts   # smoke-test inside a real pi session
 
 The test suite uses vitest. Test descriptions follow `#given .. #when .. #then` style; bodies use plain `// given / // when / // then` comments. No `any`, no enums.
 
+## Releasing
+
+Releases use the `version` in `package.json` and a matching `v<version>` git tag.
+For each release:
+
+1. Run `npm version patch --no-git-tag-version` (or `minor` / `major`).
+2. Move the release notes from `[Unreleased]` to
+   `## [<version>] - YYYY-MM-DD` in `CHANGELOG.md`.
+3. Merge the version change to `main` and wait for CI to pass.
+4. Run the `release` workflow from `main` in GitHub Actions.
+
+The workflow rejects an existing full version tag or a missing changelog section,
+reruns the checks and tests, creates the immutable version tag and GitHub
+release, then force-moves the matching `v<major>` tag. The first `v0.1.0`
+release is already prepared, so it only needs steps 3 and 4.
+
 ## License
 
 [MIT](LICENSE). See [NOTICE](NOTICE) for re-license disclosure relative to omo.
 
-## Related
-
-- [senpi](https://github.com/code-yeongyu/senpi) — the fork/runtime these extensions are extracted from.
-- [Ultraworkers Discord](https://discord.gg/PUwSMR9XNk) — community link from the senpi README.
-- [Dori](https://sisyphuslabs.ai) — the product powered by senpi under the hood.
-
 ## Acknowledgements
 
-- **Yeongyu Kim** ([@code-yeongyu](https://github.com/code-yeongyu)) — author of the original LSP tools in [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent), and of this pi port.
-- **Mario Zechner** ([@badlogic](https://github.com/badlogic)) — author of [pi-mono](https://github.com/badlogic/pi-mono) and the pi-coding-agent extension API this package targets.
-- **Microsoft** — author of the [vscode-jsonrpc](https://github.com/microsoft/vscode-languageserver-node) transport library used here.
+- **Yeongyu Kim** ([@code-yeongyu](https://github.com/code-yeongyu)) is the author of the original omo LSP tools and the upstream `pi-lsp-client` package this fork is based on.
+- **Mario Zechner** ([@badlogic](https://github.com/badlogic)) is the author of [pi-mono](https://github.com/badlogic/pi-mono) and the pi-coding-agent extension API this package targets.
+- **Microsoft** maintains the [vscode-jsonrpc](https://github.com/microsoft/vscode-languageserver-node) transport library used here.
