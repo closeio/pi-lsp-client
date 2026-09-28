@@ -41,7 +41,7 @@ Rename available at 42:7-42:13 (current: "oldFoo")
 Install an exact release from git:
 
 ```bash
-pi install https://github.com/closeio/pi-lsp-client@v0.1.0
+pi install https://github.com/closeio/pi-lsp-client@v0.2.0
 ```
 
 Full version tags never move. To track the latest release within a major version,
@@ -166,7 +166,7 @@ The user-global path follows pi's own convention. By default that's `~/.pi/agent
 
 For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the primary agent-dir path does not exist.
 
-```jsonc
+```json
 {
   "lsp": {
     "my-server": {
@@ -177,6 +177,12 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
     },
     "biome": {
       "disabled": true
+    },
+    "kotlin-language-server": {
+      "command": ["kotlin-language-server"],
+      "extensions": [".kt", ".kts"],
+      "requestTimeoutMs": 90000,
+      "initTimeoutMs": 90000
     }
   }
 }
@@ -184,13 +190,15 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
 
 `disabled: true` removes a builtin server from resolution. Project config wins over user config. Builtins are the lowest priority (only used when no project/user override exists).
 
+`requestTimeoutMs` and `initTimeoutMs` override the global `REQUEST_TIMEOUT_MS` / `INIT_TIMEOUT_MS` defaults (15s / 60s) for that one server only. Values must be positive numbers of milliseconds; anything else is ignored and the default applies. The config file is parsed as plain JSON, so comments are not allowed. Useful for servers whose `initialize` handshake does real project analysis (e.g. `kotlin-language-server` importing a large Gradle multi-module project) and routinely exceeds the defaults on some workspaces but not others.
+
 ## Lifecycle
 
 - **Per-session managers.** Each pi session owns its own `LspManager`, resolved lazily on first use via `getManagerForSession(ctx.sessionManager)` from `manager-registry.js`. Concurrent sub-agent sessions in one Node process do not share clients - one session's `session_shutdown` cannot dispose servers another session is still using. Managers are keyed by reference identity of `ctx.sessionManager` in a `WeakMap`, so a forgotten session is GC-safe.
 - **Lazy spawn.** Servers spawn on first tool call for a matching extension. No eager warmup of the entire registry.
 - **Refcount.** Each `withLspClient(...)` call increments refCount on entry and decrements in `finally`. Idle reaping fires only when refCount hits zero AND lastUsedAt is older than the idle timeout.
 - **Idle timeout: 5 minutes.** Idle clients are stopped and removed from the pool.
-- **Init timeout: 60 seconds.** A pending init older than 60s is reaped, even if other callers are waiting on it.
+- **Init timeout: 60 seconds by default, overridable per-server.** A pending init older than the effective timeout is reaped, even if other callers are waiting on it. Set `initTimeoutMs` on a server entry in `.pi/lsp-client.json` to raise (or lower) this for that server only — see [Custom Servers / Configuration](#custom-servers--configuration).
 - **Abort-aware acquisition.** `getClient(root, server, signal?)` participates in tool cancellation. If the signal aborts before init resolves, the caller is removed from the waiter list; if no callers remain, the initializing client is stopped and removed.
 - **Crash retry.** When the JSON-RPC transport throws `LspConnectionClosedError` or `LspProcessExitedError` mid-call, the wrapper evicts the dead client and retries exactly once for idempotent read tools (`diagnostics`, `goto_definition`, `find_references`, `symbols`, `prepare_rename`). Mutating tools (`rename`) are never retried.
 - **Session shutdown is the primary cleanup boundary.** `pi.on("session_shutdown", ...)` calls `disposeManagerForSession(ctx.sessionManager)` - stops that session's clients, clears its reaper interval, unregisters its process exit fallback, and clears `pi-lsp` status/widget keys. Other sessions' managers are untouched.
@@ -217,12 +225,14 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
 ```bash
 git clone https://github.com/closeio/pi-lsp-client
 cd pi-lsp-client
-npm install            # install dev + peer dependencies
-npm test               # run vitest
-npm run typecheck      # strict tsc --noEmit
-npm run check          # tsc + biome
+bun install            # install dev dependencies (Bun 1.4.2, bun.lock)
+bun run test           # run vitest (tests execute on Node)
+bun run typecheck      # strict tsgo --noEmit
+bun run check          # tsgo + biome
 pi -e ./src/index.ts   # smoke-test inside a real pi session
 ```
+
+Bun is the dev and CI toolchain; the extension runtime stays Node-only. `package-lock.json` is kept in sync so `npm ci && npm test` also works (CI runs it as an npm-consumer job). Requires Node >= 22.19.0.
 
 The test suite uses vitest. Test descriptions follow `#given .. #when .. #then` style; bodies use plain `// given / // when / // then` comments. No `any`, no enums.
 
@@ -239,8 +249,12 @@ For each release:
 
 The workflow rejects an existing full version tag or a missing changelog section,
 reruns the checks and tests, creates the immutable version tag and GitHub
-release, then force-moves the matching `v<major>` tag. The first `v0.1.0`
-release is already prepared, so it only needs steps 3 and 4.
+release, then force-moves the matching `v<major>` tag.
+
+Version numbers follow upstream. When merging an upstream release, set
+`package.json` to the upstream version and fold its changelog section into
+`CHANGELOG.md`, so `closeio/pi-lsp-client@v0.2.0` is upstream `v0.2.0` plus
+Close's changes.
 
 ## License
 
