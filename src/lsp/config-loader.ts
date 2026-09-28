@@ -37,6 +37,8 @@ interface LspEntry {
 	priority?: number;
 	env?: Record<string, string>;
 	initialization?: Record<string, unknown>;
+	requestTimeoutMs?: number;
+	initTimeoutMs?: number;
 }
 
 interface ConfigJson {
@@ -74,6 +76,10 @@ function loadJsonFile(path: string): ConfigJson | null {
 	} catch {
 		return null;
 	}
+}
+
+function isPositiveTimeout(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 export function loadAllConfigs(): Map<ConfigSource, ConfigJson> {
@@ -117,6 +123,8 @@ export function getMergedServers(): ServerWithSource[] {
 				priority: entry.priority ?? 0,
 				...(entry.env !== undefined ? { env: entry.env } : {}),
 				...(entry.initialization !== undefined ? { initialization: entry.initialization } : {}),
+				...(isPositiveTimeout(entry.requestTimeoutMs) ? { requestTimeoutMs: entry.requestTimeoutMs } : {}),
+				...(isPositiveTimeout(entry.initTimeoutMs) ? { initTimeoutMs: entry.initTimeoutMs } : {}),
 				source,
 			});
 			seen.add(id);

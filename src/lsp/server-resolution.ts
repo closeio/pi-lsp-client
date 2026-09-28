@@ -35,6 +35,8 @@ export function findServerForExtension(ext: string): ServerLookupResult {
 					priority: server.priority,
 					...(server.env !== undefined ? { env: server.env } : {}),
 					...(server.initialization !== undefined ? { initialization: server.initialization } : {}),
+					...(server.requestTimeoutMs !== undefined ? { requestTimeoutMs: server.requestTimeoutMs } : {}),
+					...(server.initTimeoutMs !== undefined ? { initTimeoutMs: server.initTimeoutMs } : {}),
 				},
 			};
 		}

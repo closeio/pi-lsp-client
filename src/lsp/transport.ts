@@ -4,7 +4,7 @@ import {
 	type MessageConnection,
 	StreamMessageReader,
 	StreamMessageWriter,
-} from "vscode-jsonrpc/node.js";
+} from "vscode-jsonrpc/node";
 
 import { REQUEST_TIMEOUT_MS, STOP_HARD_KILL_TIMEOUT_MS, STOP_SIGKILL_GRACE_MS } from "./constants.js";
 import { LspConnectionClosedError, LspProcessExitedError, LspRequestTimeoutError } from "./errors.js";
@@ -133,7 +133,7 @@ export class LspClientTransport {
 			timeoutHandle = setTimeout(() => {
 				const stderrTail = this.stderrBuffer.slice(-5).join("\n");
 				reject(new LspRequestTimeoutError(method, stderrTail || undefined));
-			}, REQUEST_TIMEOUT_MS);
+			}, this.server.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
 		});
 
 		try {
