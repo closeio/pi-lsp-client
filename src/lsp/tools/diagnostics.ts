@@ -51,7 +51,7 @@ export async function runLspDiagnostics(
 	const manager = getManagerForSession(ctx.sessionManager);
 	try {
 		const absPath = resolve(params.filePath);
-		const severity = params.severity as SeverityFilter | undefined;
+		const severity = params.severity;
 
 		if (isDirectoryPath(absPath)) {
 			const extension = inferExtensionFromDirectory(absPath);
@@ -132,7 +132,7 @@ export async function runLspDiagnostics(
 		if (message) {
 			const details: LspDiagnosticsDetails = {
 				filePath: params.filePath,
-				severity: (params.severity as SeverityFilter | undefined) ?? "all",
+				severity: params.severity ?? "all",
 				mode: "file",
 				diagnostics: [],
 				totalDiagnostics: 0,
