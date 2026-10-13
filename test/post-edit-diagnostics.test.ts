@@ -1,9 +1,20 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type PostEditToolResultHandler, registerPostEditDiagnosticsHook } from "../src/index.js";
-import { appendPostEditDiagnostics, syncPostEditDiagnosticsWidget } from "../src/lsp/post-edit-diagnostics.js";
-import { lsp_diagnostics } from "../src/lsp/tools/diagnostics.js";
+import {
+	appendPostEditDiagnostics,
+	resolveMutatedFilePath,
+	syncPostEditDiagnosticsWidget,
+} from "../src/lsp/post-edit-diagnostics.js";
+import { runLspDiagnostics } from "../src/lsp/tools/diagnostics.js";
+
+vi.mock("../src/lsp/tools/diagnostics.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../src/lsp/tools/diagnostics.js")>()),
+	runLspDiagnostics: vi.fn(),
+}));
 
 interface WidgetCall {
 	key: string;
@@ -60,8 +71,11 @@ function captureToolResultHandler(): PostEditToolResultHandler {
 	return capturedHandler;
 }
 
+const SESSION_CWD = "/work/project";
+
 function extensionContextWithWidgetCalls(calls: WidgetCall[]): ExtensionContext {
 	return {
+		cwd: SESSION_CWD,
 		ui: {
 			setWidget(key, content, options): void {
 				if (typeof content === "function") throw new Error("Expected string widget content");
@@ -227,7 +241,7 @@ describe("post-edit diagnostics", () => {
 		const event = writeEvent("src/broken.ts");
 		const widgetCalls: WidgetCall[] = [];
 		const ctx = extensionContextWithWidgetCalls(widgetCalls);
-		const diagnostics = vi.spyOn(lsp_diagnostics, "execute").mockResolvedValue({
+		const diagnostics = vi.mocked(runLspDiagnostics).mockResolvedValue({
 			content: [{ type: "text", text: "error[typescript] (2322) at 1:13: broken" }],
 			details: {
 				filePath: "src/broken.ts",
@@ -244,8 +258,7 @@ describe("post-edit diagnostics", () => {
 
 		// then
 		expect(diagnostics).toHaveBeenCalledWith(
-			"call-1:post-edit-diagnostics:src/broken.ts",
-			{ filePath: "src/broken.ts", severity: "error" },
+			{ filePath: "/work/project/src/broken.ts", severity: "error" },
 			undefined,
 			undefined,
 			ctx,
@@ -262,5 +275,94 @@ describe("post-edit diagnostics", () => {
 				},
 			],
 		});
+	});
+
+	it("#given registered extension #when diagnostics throw #then leaves the tool result unchanged", async () => {
+		// given
+		const handler = captureToolResultHandler();
+		const event = writeEvent("src/broken.ts");
+		const widgetCalls: WidgetCall[] = [];
+		const ctx = extensionContextWithWidgetCalls(widgetCalls);
+		vi.mocked(runLspDiagnostics).mockRejectedValue(new Error("LSP request timeout (method: diagnostics)"));
+
+		// when
+		const result = await handler(event, ctx);
+
+		// then
+		expect(widgetCalls).toEqual([{ key: "pi-lsp", content: undefined, placement: "belowEditor" }]);
+		expect(result).toBeUndefined();
+	});
+
+	it("#given a stale context whose cwd getter throws #when handling a write #then leaves the tool result unchanged", async () => {
+		// given
+		const handler = captureToolResultHandler();
+		const ctx = extensionContextWithWidgetCalls([]);
+		Object.defineProperty(ctx, "cwd", {
+			get(): string {
+				throw new Error("Extension context is no longer active");
+			},
+		});
+
+		// when
+		const result = await handler(writeEvent("src/broken.ts"), ctx);
+
+		// then
+		expect(result).toBeUndefined();
+	});
+
+	it("#given registered extension #when one of several files throws #then still reports the others", async () => {
+		// given
+		const handler = captureToolResultHandler();
+		const event = applyPatchEvent(["src/crash.ts", "src/broken.ts"]);
+		const ctx = extensionContextWithWidgetCalls([]);
+		vi.mocked(runLspDiagnostics).mockImplementation(async ({ filePath }) => {
+			if (filePath.endsWith("crash.ts")) throw new Error("LSP server exited");
+			return {
+				content: [{ type: "text", text: "error[typescript] (2322) at 1:13: broken" }],
+				details: {
+					filePath,
+					severity: "error",
+					mode: "file",
+					diagnostics: [],
+					totalDiagnostics: 1,
+					truncated: false,
+				},
+			};
+		});
+
+		// when
+		const result = await handler(event, ctx);
+
+		// then
+		expect(result).toEqual({
+			content: [
+				{ type: "text", text: "Patch applied successfully." },
+				{
+					type: "text",
+					text:
+						"\n\nLSP errors detected in src/broken.ts, please fix:\n" +
+						"error[typescript] (2322) at 1:13: broken",
+				},
+			],
+		});
+	});
+});
+
+describe("resolveMutatedFilePath", () => {
+	it.each([
+		["src/foo.ts", "/work/project/src/foo.ts"],
+		["./src/../src/foo.ts", "/work/project/src/foo.ts"],
+		["@src/foo.ts", "/work/project/src/foo.ts"],
+		["/abs/foo.ts", "/abs/foo.ts"],
+		["@/abs/foo.ts", "/abs/foo.ts"],
+		["file:///abs/foo.ts", "/abs/foo.ts"],
+		["src/my\u00A0file.ts", "/work/project/src/my file.ts"],
+	])("#given %s #when resolving against the session cwd #then returns %s", (input, expected) => {
+		expect(resolveMutatedFilePath(input, SESSION_CWD)).toBe(expected);
+	});
+
+	it("#given a ~ path #when resolving #then expands the home directory", () => {
+		expect(resolveMutatedFilePath("~/proj/foo.ts", SESSION_CWD)).toBe(join(homedir(), "proj/foo.ts"));
+		expect(resolveMutatedFilePath("~", SESSION_CWD)).toBe(homedir());
 	});
 });

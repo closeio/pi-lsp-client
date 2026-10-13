@@ -1,3 +1,6 @@
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ToolResultEvent } from "@earendil-works/pi-coding-agent";
 
 export type DiagnosticsRunner = (filePath: string) => Promise<string>;
@@ -5,6 +8,7 @@ export type DiagnosticsRunner = (filePath: string) => Promise<string>;
 const MUTATION_TOOL_NAMES = new Set(["write", "edit", "apply_patch"]);
 const CLEAN_DIAGNOSTICS_TEXT = "No diagnostics found";
 const UNSUPPORTED_EXTENSION_TEXT = "No LSP server configured for extension:";
+const UNICODE_SPACES = /[  -   　]/g;
 const SERVER_NOT_INSTALLED_TEXT = "is configured but NOT INSTALLED.";
 export const POST_EDIT_DIAGNOSTICS_WIDGET_KEY = "pi-lsp";
 
@@ -68,6 +72,24 @@ export function syncPostEditDiagnosticsWidget(
 ): void {
 	if (!result) return;
 	setWidget(POST_EDIT_DIAGNOSTICS_WIDGET_KEY, result.widgetLines, { placement: "belowEditor" });
+}
+
+/**
+ * Resolve a mutation tool's path argument the way pi's own `edit` and `write` tools do
+ * (`resolveToCwd`, which pi does not export): normalize unicode spaces, strip a leading `@`,
+ * expand `~`, accept `file://` URLs, then resolve against the session cwd.
+ */
+export function resolveMutatedFilePath(filePath: string, cwd: string): string {
+	let normalized = filePath.replace(UNICODE_SPACES, " ");
+	if (normalized.startsWith("@")) normalized = normalized.slice(1);
+	if (normalized === "~") {
+		normalized = homedir();
+	} else if (normalized.startsWith("~/")) {
+		normalized = join(homedir(), normalized.slice(2));
+	} else if (normalized.startsWith("file://")) {
+		normalized = fileURLToPath(normalized);
+	}
+	return isAbsolute(normalized) ? resolve(normalized) : resolve(cwd, normalized);
 }
 
 export function extractMutatedFilePaths(event: ToolResultEvent): string[] {

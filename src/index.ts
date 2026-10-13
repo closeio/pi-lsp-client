@@ -7,6 +7,7 @@ import { disposeManagerForSession, getManagerForSession } from "./lsp/manager-re
 import {
 	appendPostEditDiagnostics,
 	POST_EDIT_DIAGNOSTICS_WIDGET_KEY,
+	resolveMutatedFilePath,
 	syncPostEditDiagnosticsWidget,
 } from "./lsp/post-edit-diagnostics.js";
 import {
@@ -25,7 +26,7 @@ import {
 } from "./lsp/renderers.js";
 import { AUTO_INSTALLABLE_SERVERS, BUILTIN_SERVERS, LSP_INSTALL_HINTS } from "./lsp/server-definitions.js";
 import { getAllServers } from "./lsp/server-resolution.js";
-import { type LspDiagnosticsDetails, lsp_diagnostics } from "./lsp/tools/diagnostics.js";
+import { type LspDiagnosticsDetails, lsp_diagnostics, runLspDiagnostics } from "./lsp/tools/diagnostics.js";
 import { type LspFindReferencesDetails, lsp_find_references } from "./lsp/tools/find-references.js";
 import { type LspGotoDefinitionDetails, lsp_goto_definition } from "./lsp/tools/goto-definition.js";
 import {
@@ -220,17 +221,18 @@ export async function handlePostEditDiagnosticsToolResult(
 	ctx: ExtensionContext,
 ): Promise<PostEditToolResultHandlerResult | undefined> {
 	const result = await appendPostEditDiagnostics(event, async (filePath) => {
-		const result = await lsp_diagnostics.execute(
-			`${event.toolCallId}:post-edit-diagnostics:${filePath}`,
-			{ filePath, severity: "error" },
-			undefined,
-			undefined,
-			ctx,
-		);
-		return result.content
-			.filter((block) => block.type === "text")
-			.map((block) => block.text)
-			.join("\n");
+		try {
+			const absPath = resolveMutatedFilePath(filePath, ctx.cwd);
+			const result = await runLspDiagnostics({ filePath: absPath, severity: "error" }, undefined, undefined, ctx);
+			return result.content
+				.filter((block) => block.type === "text")
+				.map((block) => block.text)
+				.join("\n");
+		} catch {
+			// Diagnostics are an optional addition to a mutation that already succeeded, so an LSP
+			// crash or timeout here must not turn the tool result into a handler failure.
+			return "";
+		}
 	});
 	syncPostEditDiagnosticsWidget((key, content, options) => ctx.ui.setWidget(key, content, options), result);
 	return result?.content ? { content: result.content } : undefined;
