@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type PostEditToolResultHandler, registerPostEditDiagnosticsHook } from "../src/index.js";
 import { appendPostEditDiagnostics, syncPostEditDiagnosticsWidget } from "../src/lsp/post-edit-diagnostics.js";
-import { lsp_diagnostics } from "../src/lsp/tools/diagnostics.js";
+import { runLspDiagnostics } from "../src/lsp/tools/diagnostics.js";
+
+vi.mock("../src/lsp/tools/diagnostics.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../src/lsp/tools/diagnostics.js")>()),
+	runLspDiagnostics: vi.fn(),
+}));
 
 interface WidgetCall {
 	key: string;
@@ -227,7 +232,7 @@ describe("post-edit diagnostics", () => {
 		const event = writeEvent("src/broken.ts");
 		const widgetCalls: WidgetCall[] = [];
 		const ctx = extensionContextWithWidgetCalls(widgetCalls);
-		const diagnostics = vi.spyOn(lsp_diagnostics, "execute").mockResolvedValue({
+		const diagnostics = vi.mocked(runLspDiagnostics).mockResolvedValue({
 			content: [{ type: "text", text: "error[typescript] (2322) at 1:13: broken" }],
 			details: {
 				filePath: "src/broken.ts",
@@ -244,7 +249,6 @@ describe("post-edit diagnostics", () => {
 
 		// then
 		expect(diagnostics).toHaveBeenCalledWith(
-			"call-1:post-edit-diagnostics:src/broken.ts",
 			{ filePath: "src/broken.ts", severity: "error" },
 			undefined,
 			undefined,

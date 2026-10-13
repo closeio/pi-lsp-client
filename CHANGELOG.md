@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Built and tested against pi 1.1.0 (was 0.87.1). The dev dependencies pin
+  every `@earendil-works/*` package to 1.1.0, since pi no longer ships a
+  shrinkwrap and its own dependency ranges otherwise resolve to newer
+  releases.
+- The post-edit diagnostics hook calls `runLspDiagnostics()` instead of
+  `lsp_diagnostics.execute()`. In pi 1.x a tool's `execute()` takes an
+  `ExtensionToolContext`, which a `tool_result` handler's context is not.
+
 ## [0.2.0] - 2026-09-24
 
 Merges upstream [code-yeongyu/pi-lsp-client v0.2.0](https://github.com/code-yeongyu/pi-lsp-client/releases/tag/v0.2.0)

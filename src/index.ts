@@ -25,7 +25,7 @@ import {
 } from "./lsp/renderers.js";
 import { AUTO_INSTALLABLE_SERVERS, BUILTIN_SERVERS, LSP_INSTALL_HINTS } from "./lsp/server-definitions.js";
 import { getAllServers } from "./lsp/server-resolution.js";
-import { type LspDiagnosticsDetails, lsp_diagnostics } from "./lsp/tools/diagnostics.js";
+import { type LspDiagnosticsDetails, lsp_diagnostics, runLspDiagnostics } from "./lsp/tools/diagnostics.js";
 import { type LspFindReferencesDetails, lsp_find_references } from "./lsp/tools/find-references.js";
 import { type LspGotoDefinitionDetails, lsp_goto_definition } from "./lsp/tools/goto-definition.js";
 import {
@@ -220,13 +220,7 @@ export async function handlePostEditDiagnosticsToolResult(
 	ctx: ExtensionContext,
 ): Promise<PostEditToolResultHandlerResult | undefined> {
 	const result = await appendPostEditDiagnostics(event, async (filePath) => {
-		const result = await lsp_diagnostics.execute(
-			`${event.toolCallId}:post-edit-diagnostics:${filePath}`,
-			{ filePath, severity: "error" },
-			undefined,
-			undefined,
-			ctx,
-		);
+		const result = await runLspDiagnostics({ filePath, severity: "error" }, undefined, undefined, ctx);
 		return result.content
 			.filter((block) => block.type === "text")
 			.map((block) => block.text)
