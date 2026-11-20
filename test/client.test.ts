@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -260,6 +260,36 @@ describe("LspClient waitForProjectReady", () => {
 
 			// then: second wait returns immediately instead of stalling again
 			expect(Date.now() - t0).toBeLessThan(200);
+		} finally {
+			harness.disposeHarness();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("#given a path containing parentheses #when server sends percent-encoded publishDiagnostics URI #then waitForProjectReady resolves immediately and diagnostics are retrievable", async () => {
+		// given
+		const root = mkdtempSync(join(tmpdir(), "pi-lsp-parens-"));
+		const harness = new ProgressHarness(root);
+		try {
+			const dir = join(root, "app", "(marketing)", "[slug]");
+			mkdirSync(dir, { recursive: true });
+			const filePath = join(dir, "page.ts");
+			writeFileSync(filePath, "const x: number = 'oops';\n");
+			// vscode-uri / typescript-language-server percent-encodes '(' and ')' where Node pathToFileURL does not
+			const encodedUri = pathToFileURL(filePath).href.replace(/\(/g, "%28").replace(/\)/g, "%29");
+
+			// when
+			const t0 = Date.now();
+			const ready = harness.waitForProjectReady(filePath);
+			await harness.serverConnection.sendNotification("textDocument/publishDiagnostics", {
+				uri: encodedUri,
+				diagnostics: [diagnostic],
+			});
+			await ready;
+
+			// then: did not stall for PROJECT_LOAD_GRACE_MS and lookup by Node's pathToFileURL finds the diagnostic
+			expect(Date.now() - t0).toBeLessThan(1_000);
+			expect(harness.getStoredDiagnostics(pathToFileURL(filePath).href)).toEqual([diagnostic]);
 		} finally {
 			harness.disposeHarness();
 			rmSync(root, { recursive: true, force: true });
