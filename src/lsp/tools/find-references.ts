@@ -39,7 +39,13 @@ export const lsp_find_references = defineTool({
 			const result = await withLspClient<Location[]>(
 				params.filePath,
 				async (client) =>
-					client.references(params.filePath, params.line, params.character, params.includeDeclaration ?? true),
+					client.references(
+						params.filePath,
+						params.line,
+						params.character,
+						params.includeDeclaration ?? true,
+						signal,
+					),
 				"references",
 				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);
