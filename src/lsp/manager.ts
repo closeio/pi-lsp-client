@@ -1,6 +1,8 @@
 import { LspClient } from "./client.js";
 import { IDLE_TIMEOUT_MS, INIT_TIMEOUT_MS, REAPER_INTERVAL_MS } from "./constants.js";
+import { getServerReadiness } from "./readiness.js";
 import type { ResolvedServer } from "./types.js";
+import { awaitWithSignal } from "./utils.js";
 
 interface ManagedClient {
 	client: LspClient;
@@ -31,37 +33,6 @@ export interface LspManagerOptions {
 	reaperIntervalMs?: number;
 	clientFactory?: (root: string, server: ResolvedServer) => LspClient;
 	now?: () => number;
-}
-
-function awaitWithSignal<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-	if (!signal) return promise;
-	return new Promise<T>((resolve, reject) => {
-		let settled = false;
-		const onAbort = () => {
-			if (settled) return;
-			settled = true;
-			reject(new DOMException("Aborted", "AbortError"));
-		};
-		if (signal.aborted) {
-			onAbort();
-			return;
-		}
-		signal.addEventListener("abort", onAbort, { once: true });
-		promise.then(
-			(value) => {
-				if (settled) return;
-				settled = true;
-				signal.removeEventListener("abort", onAbort);
-				resolve(value);
-			},
-			(err) => {
-				if (settled) return;
-				settled = true;
-				signal.removeEventListener("abort", onAbort);
-				reject(err);
-			},
-		);
-	});
 }
 
 export class LspManager {
@@ -185,12 +156,15 @@ export class LspManager {
 		if (managed) {
 			if (managed.initPromise) {
 				managed.pendingWaiters++;
+				managed.client.refProgressWait();
 				try {
 					await awaitWithSignal(managed.initPromise, signal);
 				} catch (err) {
 					managed.pendingWaiters--;
 					await this.tryDeleteIfOrphaned(key, managed);
 					throw err;
+				} finally {
+					managed.client.unrefProgressWait();
 				}
 				managed.pendingWaiters--;
 			}
@@ -274,7 +248,7 @@ export class LspManager {
 		managed.client.stop().catch(() => {});
 	}
 
-	warmupClient(root: string, server: ResolvedServer): void {
+	warmupClient(root: string, server: ResolvedServer, seedFilePath?: string): void {
 		if (this.disposed) return;
 		const key = this.getKey(root, server.id);
 		if (this.clients.has(key)) return;
@@ -284,6 +258,9 @@ export class LspManager {
 		const initPromise = (async () => {
 			await client.start();
 			await client.initialize();
+			if (seedFilePath && getServerReadiness(server.id)?.waitForProjectProgress) {
+				await client.waitForProjectReady(seedFilePath, undefined, { background: true });
+			}
 		})();
 
 		const managed: ManagedClient = {

@@ -6,18 +6,35 @@ import {
 	StreamMessageWriter,
 } from "vscode-jsonrpc/node";
 
-import { REQUEST_TIMEOUT_MS, STOP_HARD_KILL_TIMEOUT_MS, STOP_SIGKILL_GRACE_MS } from "./constants.js";
+import { INIT_TIMEOUT_MS, REQUEST_TIMEOUT_MS, STOP_HARD_KILL_TIMEOUT_MS, STOP_SIGKILL_GRACE_MS } from "./constants.js";
 import { LspConnectionClosedError, LspProcessExitedError, LspRequestTimeoutError } from "./errors.js";
 import { type SpawnedProcess, spawnProcess } from "./process.js";
 import { getAdditionalPathBases } from "./server-installation.js";
 import type { Diagnostic, ResolvedServer } from "./types.js";
 
+type ProgressToken = string | number;
+
+interface ProgressNotification {
+	token?: ProgressToken;
+	value?: {
+		kind?: string;
+		title?: string;
+		message?: string;
+		percentage?: number;
+	};
+}
 export class LspClientTransport {
 	protected proc: SpawnedProcess | null = null;
 	protected connection: MessageConnection | null = null;
 	protected readonly stderrBuffer: string[] = [];
 	protected processExited = false;
 	protected readonly diagnosticsStore = new Map<string, Diagnostic[]>();
+	protected readonly activeProgressTokens = new Set<ProgressToken>();
+	protected readonly diagnosticsReceivedUris = new Set<string>();
+	protected hasSeenProgress = false;
+	private readonly progressListeners = new Set<() => void>();
+	private readonly backgroundWaitTimers = new Set<NodeJS.Timeout>();
+	private foregroundProgressWaiters = 0;
 
 	constructor(
 		protected readonly root: string,
@@ -62,16 +79,23 @@ export class LspClientTransport {
 			new StreamMessageWriter(this.proc.stdin),
 		);
 
-		this.connection.onNotification(
+		this.attachConnectionHandlers(this.connection);
+		this.connection.listen();
+	}
+
+	protected attachConnectionHandlers(connection: MessageConnection): void {
+		connection.onNotification(
 			"textDocument/publishDiagnostics",
 			(params: { uri?: string; diagnostics?: Diagnostic[] }) => {
 				if (params.uri) {
 					this.diagnosticsStore.set(params.uri, params.diagnostics ?? []);
+					this.diagnosticsReceivedUris.add(params.uri);
+					this.notifyProgressListeners();
 				}
 			},
 		);
 
-		this.connection.onRequest("workspace/configuration", (params: { items?: Array<{ section?: string }> }) => {
+		connection.onRequest("workspace/configuration", (params: { items?: Array<{ section?: string }> }) => {
 			const items = params?.items ?? [];
 			return items.map((item) => {
 				if (item.section === "json") return { validate: { enable: true } };
@@ -79,16 +103,146 @@ export class LspClientTransport {
 			});
 		});
 
-		this.connection.onRequest("client/registerCapability", () => null);
-		this.connection.onRequest("window/workDoneProgress/create", () => null);
+		connection.onRequest("client/registerCapability", () => null);
+		connection.onRequest("window/workDoneProgress/create", () => null);
 
-		this.connection.onClose(() => {
-			this.processExited = true;
+		connection.onNotification("$/progress", (params?: ProgressNotification) => {
+			const token = params?.token;
+			const kind = params?.value?.kind;
+			if (token === undefined) return;
+			if (kind === "begin") {
+				this.hasSeenProgress = true;
+				this.activeProgressTokens.add(token);
+				this.notifyProgressListeners();
+			} else if (kind === "end") {
+				this.activeProgressTokens.delete(token);
+				this.notifyProgressListeners();
+			}
 		});
 
-		this.connection.onError(() => {});
+		connection.onClose(() => {
+			this.processExited = true;
+			this.activeProgressTokens.clear();
+			this.notifyProgressListeners();
+		});
 
-		this.connection.listen();
+		connection.onError(() => {});
+	}
+
+	protected notifyProgressListeners(): void {
+		for (const listener of [...this.progressListeners]) {
+			listener();
+		}
+	}
+
+	/**
+	 * Keep any active background progress wait timer ref'd while a foreground
+	 * caller is awaiting this client's initialization, so Node doesn't exit
+	 * mid-await when the LSP child process and its stdio pipes are unref'd.
+	 */
+	refProgressWait(): void {
+		this.foregroundProgressWaiters++;
+		for (const timer of this.backgroundWaitTimers) {
+			if (typeof timer.ref === "function") {
+				timer.ref();
+			}
+		}
+	}
+
+	unrefProgressWait(): void {
+		if (this.foregroundProgressWaiters > 0) {
+			this.foregroundProgressWaiters--;
+		}
+		if (this.foregroundProgressWaiters === 0) {
+			for (const timer of this.backgroundWaitTimers) {
+				if (typeof timer.unref === "function") {
+					timer.unref();
+				}
+			}
+		}
+	}
+
+	protected waitForProgressCondition(
+		predicate: () => boolean,
+		timeoutMs: number,
+		signal?: AbortSignal,
+		options?: { background?: boolean },
+	): Promise<boolean> {
+		if (predicate()) return Promise.resolve(true);
+		if (!this.connection || !this.isAlive()) return Promise.resolve(false);
+		if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+
+		return new Promise<boolean>((resolve, reject) => {
+			let settled = false;
+			const isBackground = options?.background === true;
+
+			const cleanup = () => {
+				clearTimeout(timer);
+				if (isBackground) {
+					this.backgroundWaitTimers.delete(timer);
+				}
+				this.progressListeners.delete(onEvent);
+				signal?.removeEventListener("abort", onAbort);
+			};
+
+			const onEvent = () => {
+				if (settled) return;
+				if (predicate()) {
+					settled = true;
+					cleanup();
+					resolve(true);
+				} else if (!this.isAlive()) {
+					settled = true;
+					cleanup();
+					resolve(false);
+				}
+			};
+
+			const onAbort = () => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				reject(new DOMException("Aborted", "AbortError"));
+			};
+
+			const timer = setTimeout(() => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				resolve(predicate());
+			}, timeoutMs);
+			if (isBackground) {
+				this.backgroundWaitTimers.add(timer);
+				if (this.foregroundProgressWaiters === 0 && typeof timer.unref === "function") {
+					timer.unref();
+				}
+			}
+
+			this.progressListeners.add(onEvent);
+			signal?.addEventListener("abort", onAbort, { once: true });
+		});
+	}
+
+	async waitForActiveProgress(
+		timeoutMs?: number,
+		signal?: AbortSignal,
+		options?: { background?: boolean },
+	): Promise<void> {
+		if (this.activeProgressTokens.size === 0) return;
+		const waitedTokens = [...this.activeProgressTokens];
+		const completed = await this.waitForProgressCondition(
+			() => this.activeProgressTokens.size === 0 || !this.isAlive(),
+			timeoutMs ?? this.server.initTimeoutMs ?? INIT_TIMEOUT_MS,
+			signal,
+			options,
+		);
+		// If the wait timed out, evict the stuck tokens so a server that began a
+		// progress token and never sends `end` cannot stall subsequent calls.
+		if (!completed) {
+			for (const token of waitedTokens) {
+				this.activeProgressTokens.delete(token);
+			}
+		}
 	}
 
 	protected startStderrReading(): void {
@@ -207,6 +361,9 @@ export class LspClientTransport {
 			proc.kill("SIGTERM");
 		} catch {}
 		this.diagnosticsStore.clear();
+		this.activeProgressTokens.clear();
+		this.diagnosticsReceivedUris.clear();
+		this.notifyProgressListeners();
 	}
 
 	async stop(): Promise<void> {
@@ -257,6 +414,9 @@ export class LspClientTransport {
 
 		this.processExited = true;
 		this.diagnosticsStore.clear();
+		this.activeProgressTokens.clear();
+		this.diagnosticsReceivedUris.clear();
+		this.notifyProgressListeners();
 	}
 
 	getStoredDiagnostics(uri: string): Diagnostic[] {

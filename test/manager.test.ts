@@ -413,4 +413,27 @@ describe("LspManager", () => {
 		// cleanup so other tests in this file don't see the listener
 		await manager.stopAll();
 	});
+
+	it("#given typescript warmup with seed file #when concurrent getClient arrives #then waits for project readiness before returning", async () => {
+		// given
+		const { manager, clients } = setupManager({
+			clientFactoryOptions: () => ({ waitForProjectReadyDelayMs: 40 }),
+		});
+		const server = makeServer("typescript", [".ts"]);
+
+		// when
+		manager.warmupClient("/root/a", server, "/root/a/src/index.ts");
+		await Promise.resolve();
+		expect(manager.isServerInitializing("/root/a", "typescript")).toBe(true);
+
+		const client = await manager.getClient("/root/a", server);
+
+		// then
+		expect(manager.isServerInitializing("/root/a", "typescript")).toBe(false);
+		expect(client).toBe(firstClient(clients));
+		expect(firstClient(clients).waitForProjectReadyCallCount).toBe(1);
+		expect(firstClient(clients).waitForProjectReadySeedFiles).toEqual(["/root/a/src/index.ts"]);
+
+		await manager.stopAll();
+	});
 });
