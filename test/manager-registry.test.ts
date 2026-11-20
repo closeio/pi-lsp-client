@@ -1,9 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { disposeManagerForSession, getManagerForSession, hasManagerForSession } from "../src/lsp/manager-registry.js";
+import {
+	disposeManagerForSession,
+	disposeSharedManager,
+	getManagerForSession,
+	hasManagerForSession,
+	SHARED_POOL_SYMBOL,
+} from "../src/lsp/manager-registry.js";
+
+afterEach(async () => {
+	await disposeSharedManager();
+});
 
 describe("manager-registry", () => {
-	it("#given two different session keys #when getManagerForSession #then returns distinct managers", () => {
+	it("#given two different session keys #when getManagerForSession #then returns the same shared manager", () => {
 		// given
 		const sessionA = {};
 		const sessionB = {};
@@ -13,7 +23,10 @@ describe("manager-registry", () => {
 		const managerB = getManagerForSession(sessionB);
 
 		// then
-		expect(managerA).not.toBe(managerB);
+		expect(managerA).toBe(managerB);
+		expect(hasManagerForSession(sessionA)).toBe(true);
+		expect(hasManagerForSession(sessionB)).toBe(true);
+		expect(SHARED_POOL_SYMBOL in globalThis).toBe(true);
 	});
 
 	it("#given the same session key #when getManagerForSession called twice #then returns the same manager", () => {
@@ -28,40 +41,37 @@ describe("manager-registry", () => {
 		expect(first).toBe(second);
 	});
 
-	it("#given a registered session #when disposeManagerForSession #then registry no longer has it", async () => {
-		// given
-		const sessionA = {};
-		getManagerForSession(sessionA);
-		expect(hasManagerForSession(sessionA)).toBe(true);
-
-		// when
-		await disposeManagerForSession(sessionA);
-
-		// then
-		expect(hasManagerForSession(sessionA)).toBe(false);
-	});
-
-	it("#given two sessions #when one is disposed #then the other survives", async () => {
+	it("#given a registered session #when disposeManagerForSession #then unregisters session without killing shared manager", async () => {
 		// given
 		const sessionA = {};
 		const sessionB = {};
 		const managerA = getManagerForSession(sessionA);
 		const managerB = getManagerForSession(sessionB);
+		expect(hasManagerForSession(sessionA)).toBe(true);
 
 		// when
 		await disposeManagerForSession(sessionA);
 
-		// then
+		// then: sessionA is unregistered, but sessionB and a later sessionC reuse the same live manager
 		expect(hasManagerForSession(sessionA)).toBe(false);
 		expect(hasManagerForSession(sessionB)).toBe(true);
-		// re-fetching B returns the same instance (not a fresh one)
 		expect(getManagerForSession(sessionB)).toBe(managerB);
-		// re-fetching A creates a fresh manager (not the disposed one)
-		expect(getManagerForSession(sessionA)).not.toBe(managerA);
+		expect(getManagerForSession({})).toBe(managerA);
+	});
 
-		// cleanup
-		await disposeManagerForSession(sessionA);
-		await disposeManagerForSession(sessionB);
+	it("#given active shared manager #when disposeSharedManager #then clears global slot and next call creates a fresh manager", async () => {
+		// given
+		const sessionA = {};
+		const first = getManagerForSession(sessionA);
+
+		// when
+		await disposeSharedManager();
+
+		// then
+		expect(hasManagerForSession(sessionA)).toBe(false);
+		expect(SHARED_POOL_SYMBOL in globalThis).toBe(false);
+		const second = getManagerForSession(sessionA);
+		expect(second).not.toBe(first);
 	});
 
 	it("#given no registered session #when disposeManagerForSession #then resolves without error", async () => {

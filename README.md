@@ -194,15 +194,15 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
 
 ## Lifecycle
 
-- **Per-session managers.** Each pi session owns its own `LspManager`, resolved lazily on first use via `getManagerForSession(ctx.sessionManager)` from `manager-registry.js`. Concurrent sub-agent sessions in one Node process do not share clients - one session's `session_shutdown` cannot dispose servers another session is still using. Managers are keyed by reference identity of `ctx.sessionManager` in a `WeakMap`, so a forgotten session is GC-safe.
+- **Process-wide shared pool.** Sessions in the same Node process share one `LspManager` stored under `globalThis[Symbol.for("pi-lsp-client.shared-pool.v1")]` (surviving pi's per-session `moduleCache: false` reloads). Servers are keyed by `(root, serverId)` and refcounted per call.
 - **Lazy spawn.** Servers spawn on first tool call for a matching extension. No eager warmup of the entire registry.
 - **Refcount.** Each `withLspClient(...)` call increments refCount on entry and decrements in `finally`. Idle reaping fires only when refCount hits zero AND lastUsedAt is older than the idle timeout.
 - **Idle timeout: 5 minutes.** Idle clients are stopped and removed from the pool.
 - **Init timeout: 60 seconds by default, overridable per-server.** A pending init older than the effective timeout is reaped, even if other callers are waiting on it. Set `initTimeoutMs` on a server entry in `.pi/lsp-client.json` to raise (or lower) this for that server only — see [Custom Servers / Configuration](#custom-servers--configuration).
 - **Abort-aware acquisition.** `getClient(root, server, signal?)` participates in tool cancellation. If the signal aborts before init resolves, the caller is removed from the waiter list; if no callers remain, the initializing client is stopped and removed.
 - **Crash retry.** When the JSON-RPC transport throws `LspConnectionClosedError` or `LspProcessExitedError` mid-call, the wrapper evicts the dead client and retries exactly once for idempotent read tools (`diagnostics`, `goto_definition`, `find_references`, `symbols`, `prepare_rename`). Mutating tools (`rename`) are never retried.
-- **Session shutdown is the primary cleanup boundary.** `pi.on("session_shutdown", ...)` calls `disposeManagerForSession(ctx.sessionManager)` - stops that session's clients, clears its reaper interval, unregisters its process exit fallback, and clears `pi-lsp` status/widget keys. Other sessions' managers are untouched.
-- **No raw signal handlers.** No `SIGINT`/`SIGTERM` listeners. They would conflict with pi's TUI shutdown. Each manager registers a synchronous `process.on("exit", ...)` `killSync` handler as a fallback for unexpected exits. The disposer removes that handler so listener count doesn't grow across `/reload`.
+- **Session shutdown clears UI without killing shared servers.** `pi.on("session_shutdown", ...)` clears `pi-lsp` status/widget keys and calls `disposeManagerForSession(ctx.sessionManager)` to unregister that session while keeping warm servers alive for concurrent and subsequent sessions in the same process.
+- **No raw signal handlers.** No `SIGINT`/`SIGTERM` listeners. They would conflict with pi's TUI shutdown. Spawned children, stdio pipes, and the idle reaper timer are `unref()`'d so idle servers never keep Node alive; a synchronous `process.on("exit", ...)` `killSync` handler reaps them on exit.
 
 ## Cross-Platform Notes
 
@@ -218,7 +218,7 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
 | `rust-analyzer` exited while loading `rust-src` | Run `rustup component remove rust-src` and `rustup component add rust-src` for the active toolchain, then retry the LSP tool or `/lsp warmup rust`. |
 | `lsp_rename` did not retry after a server crash | This is by design. Mutating tools never auto-retry to avoid double-applying edits. Re-issue the rename manually. |
 | Footer status stuck after `/reload` | File a bug. The `session_shutdown` handler clears `pi-lsp` status/widget keys. If they persist, the cleanup boundary was bypassed. |
-| Stale LSP child after `/reload` | Run `/lsp` to inspect the current snapshot. If `getSnapshot()` is empty but a child process is still alive, file a bug. `stopAll()` should have killed it. |
+| Stale LSP child after `/reload` | Warm servers are intentionally shared across `/reload` and replaced automatically if their config in `.pi/lsp-client.json` changes. Run `/lsp` to inspect the active pool; idle servers are reaped after 5 minutes and killed on process exit. |
 
 ## Development
 

@@ -61,6 +61,18 @@ export class LspProcessSpawnError extends Error {
 	override readonly name = "LspProcessSpawnError";
 }
 
+export function isLspProcessExitedError(err: unknown): err is LspProcessExitedError {
+	return err instanceof LspProcessExitedError || (err instanceof Error && err.name === "LspProcessExitedError");
+}
+
+export function isLspConnectionClosedError(err: unknown): err is LspConnectionClosedError {
+	return err instanceof LspConnectionClosedError || (err instanceof Error && err.name === "LspConnectionClosedError");
+}
+
+export function isLspRequestTimeoutError(err: unknown): err is LspRequestTimeoutError {
+	return err instanceof LspRequestTimeoutError || (err instanceof Error && err.name === "LspRequestTimeoutError");
+}
+
 export function isLspDeadConnectionError(err: unknown): err is LspConnectionClosedError | LspProcessExitedError {
-	return err instanceof LspConnectionClosedError || err instanceof LspProcessExitedError;
+	return isLspConnectionClosedError(err) || isLspProcessExitedError(err);
 }

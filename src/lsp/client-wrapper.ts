@@ -5,8 +5,8 @@ import type { LspClient } from "./client.js";
 import { NOT_READY_RETRY_INTERVAL_MS, NOT_READY_RETRY_TIMEOUT_MS } from "./constants.js";
 import {
 	isLspDeadConnectionError,
+	isLspRequestTimeoutError,
 	LspInvalidPathError,
-	LspRequestTimeoutError,
 	LspServerInitializingError,
 	LspServerLookupError,
 } from "./errors.js";
@@ -204,7 +204,7 @@ export async function withLspClient<T>(
 				return acquireAndCall(false);
 			}
 
-			if (err instanceof LspRequestTimeoutError) {
+			if (isLspRequestTimeoutError(err)) {
 				if (manager.isServerInitializing(root, server.id)) {
 					throw new LspServerInitializingError(err);
 				}

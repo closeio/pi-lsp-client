@@ -413,4 +413,55 @@ describe("LspManager", () => {
 		// cleanup so other tests in this file don't see the listener
 		await manager.stopAll();
 	});
+
+	it("#given pooled client with old config #when getClient or warmupClient sees changed config #then evicts old client and spawns a fresh one", async () => {
+		// given
+		const { manager, clients } = setupManager();
+		const serverV1: ResolvedServer = { ...makeServer("typescript", [".ts"]), command: ["ts-v1", "--stdio"] };
+		const serverV2: ResolvedServer = { ...makeServer("typescript", [".ts"]), command: ["ts-v2", "--stdio"] };
+
+		const c1 = await manager.getClient("/root/a", serverV1);
+		manager.releaseClient("/root/a", serverV1.id);
+
+		// when: config changes to v2
+		const c2 = await manager.getClient("/root/a", serverV2);
+
+		// then: old client stopped, new client created
+		expect(c2).not.toBe(c1);
+		expect(clients).toHaveLength(2);
+		expect(clients[0]?.stopCallCount).toBeGreaterThan(0);
+
+		// and warmupClient with a third config also replaces the stale client
+		manager.releaseClient("/root/a", serverV2.id);
+		const serverV3: ResolvedServer = { ...makeServer("typescript", [".ts"]), command: ["ts-v3", "--stdio"] };
+		manager.warmupClient("/root/a", serverV3);
+		await Promise.resolve();
+		expect(clients).toHaveLength(3);
+		expect(clients[1]?.stopCallCount).toBeGreaterThan(0);
+
+		await manager.stopAll();
+	});
+
+	it("#given dead pooled client with slow stop #when two concurrent getClient calls arrive #then only one replacement client is created and none leaks", async () => {
+		// given
+		const { manager, clients } = setupManager({
+			clientFactoryOptions: () => ({ stopDelayMs: 30 }),
+		});
+		const server = makeServer("typescript");
+		await manager.getClient("/root/a", server);
+		manager.releaseClient("/root/a", server.id);
+		firstClient(clients).markDead();
+
+		// when: two callers concurrently see the dead client and recover
+		const [c1, c2] = await Promise.all([manager.getClient("/root/a", server), manager.getClient("/root/a", server)]);
+
+		// then: both callers share one fresh client and no orphan process was leaked
+		expect(clients).toHaveLength(2);
+		expect(c1).toBe(clients[1]);
+		expect(c2).toBe(clients[1]);
+		expect(manager.getSnapshot()).toHaveLength(1);
+		expect(firstSnapshot(manager).refCount).toBe(2);
+
+		await manager.stopAll();
+	});
 });
