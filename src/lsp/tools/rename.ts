@@ -51,7 +51,7 @@ export const lsp_prepare_rename = defineTool({
 		try {
 			const result = await withLspClient<PrepareRenameResult | PrepareRenameDefaultBehavior | Range | null>(
 				params.filePath,
-				async (client) => client.prepareRename(params.filePath, params.line, params.character),
+				async (client) => client.prepareRename(params.filePath, params.line, params.character, signal),
 				"prepareRename",
 				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);
@@ -97,7 +97,7 @@ export const lsp_rename = defineTool({
 		try {
 			const edit = await withLspClient<WorkspaceEdit | null>(
 				params.filePath,
-				async (client) => client.rename(params.filePath, params.line, params.character, params.newName),
+				async (client) => client.rename(params.filePath, params.line, params.character, params.newName, signal),
 				"rename",
 				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);

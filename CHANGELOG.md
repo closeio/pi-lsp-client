@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Normalize `file://` URIs so paths with parentheses return diagnostics without stalling.
+- Re-sync context files after project load and cancel `openFile` waits on abort.
 
 ## [0.2.1] - 2026-10-31
 
