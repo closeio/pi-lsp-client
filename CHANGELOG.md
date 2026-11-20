@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `promptSnippet` and `promptGuidelines` metadata to all six LSP tools so pi advertises them in the default system prompt.
 - Shared LSP server pool across sessions in one Node process that survives pi's `moduleCache: false` reloads. Pooled servers are replaced when their `.pi/lsp-client.json` config changes.
 - Prevent cold `textDocument/references` calls from returning partial/empty results while LSP server is still loading the project.
+- Background warmup on `session_start` for the workspace's primary language server.
 
 ### Fixed
 

@@ -1,8 +1,11 @@
 import { spawn } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 
+import { findWorkspaceRoot } from "./lsp/client-wrapper.js";
 import { getMergedServers } from "./lsp/config-loader.js";
+import { findFirstFileWithExtensions, inferSeedFilesByFrequency } from "./lsp/infer-extension.js";
 import { LspInspectorComponent } from "./lsp/inspector.js";
+import type { LspManager } from "./lsp/manager.js";
 import { disposeManagerForSession, getManagerForSession } from "./lsp/manager-registry.js";
 import {
 	appendPostEditDiagnostics,
@@ -25,7 +28,7 @@ import {
 	renderSymbolsResult,
 } from "./lsp/renderers.js";
 import { AUTO_INSTALLABLE_SERVERS, BUILTIN_SERVERS, LSP_INSTALL_HINTS } from "./lsp/server-definitions.js";
-import { getAllServers } from "./lsp/server-resolution.js";
+import { findServerForExtension, getAllServers } from "./lsp/server-resolution.js";
 import { type LspDiagnosticsDetails, lsp_diagnostics, runLspDiagnostics } from "./lsp/tools/diagnostics.js";
 import { type LspFindReferencesDetails, lsp_find_references } from "./lsp/tools/find-references.js";
 import { type LspGotoDefinitionDetails, lsp_goto_definition } from "./lsp/tools/goto-definition.js";
@@ -60,13 +63,13 @@ export interface PostEditToolResultRegistrar {
 /**
  * pi-lsp-client — Language Server Protocol integration for the pi coding agent.
  *
- * Ports omo's LSP tool stack as a pi extension. Each pi session owns its own
- * `LspManager` (resolved via `getManagerForSession(ctx.sessionManager)`),
- * with refCount-based client lifecycle, idle cleanup (5min), init reaping
- * (60s), typed crash retry for read tools, and a `/lsp` inspector backed by
- * an explicit getSnapshot() API. Session scoping means concurrent sub-agent
- * sessions in one Node process never share clients - one session's
- * `session_shutdown` cannot dispose servers another session still holds.
+ * Ports omo's LSP tool stack as a pi extension. Sessions in one Node process
+ * share a single `LspManager` stored on `globalThis` (resolved via
+ * `getManagerForSession(ctx.sessionManager)`), surviving pi's per-session
+ * `moduleCache: false` reloads. Provides refCount-based client lifecycle,
+ * idle cleanup (5min), init reaping (60s), `$/progress` project-load waiting,
+ * typed crash retry for read tools, and a `/lsp` inspector backed by
+ * `getSnapshot()`.
  *
  * Tools registered:
  *   - lsp_diagnostics      — errors/warnings/info from language servers
@@ -144,6 +147,7 @@ export default function (pi: ExtensionAPI): void {
 	};
 
 	pi.on("session_start", async (_event, ctx) => {
+		warmupWorkspace(ctx.cwd, getManagerForSession(ctx.sessionManager));
 		updateStatus(ctx);
 	});
 
@@ -294,9 +298,31 @@ function runWarmup(id: string, ctx: ExtensionContext): void {
 
 	try {
 		const { source: _source, ...resolved } = server;
-		getManagerForSession(ctx.sessionManager).warmupClient(ctx.cwd, resolved);
+		const seedFile = findFirstFileWithExtensions(ctx.cwd, resolved.extensions);
+		const manager = getManagerForSession(ctx.sessionManager);
+		if (seedFile) {
+			manager.warmupClient(ctx.cwd, resolved, seedFile);
+		} else {
+			manager.warmupClient(ctx.cwd, resolved);
+		}
 		ctx.ui.notify(`Warming up '${id}' in background`, "info");
 	} catch (err) {
 		ctx.ui.notify(`Warmup '${id}' failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+	}
+}
+
+const DATA_DOC_EXTENSIONS = new Set([".json", ".jsonc", ".yaml", ".yml", ".toml", ".xml", ".md", ".markdown"]);
+
+function warmupWorkspace(cwd: string, manager: LspManager): void {
+	try {
+		const seeds = inferSeedFilesByFrequency(cwd);
+		const primary = seeds.find((s) => !DATA_DOC_EXTENSIONS.has(s.extension)) ?? seeds[0];
+		if (!primary) return;
+		const lookup = findServerForExtension(primary.extension);
+		if (lookup.status !== "found") return;
+		const root = findWorkspaceRoot(primary.filePath);
+		manager.warmupClient(root, lookup.server, primary.filePath);
+	} catch {
+		// Background warmup is best-effort and must never disrupt session_start.
 	}
 }
