@@ -196,6 +196,7 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
 
 - **Process-wide shared pool.** Sessions in the same Node process share one `LspManager` stored under `globalThis[Symbol.for("pi-lsp-client.shared-pool.v1")]` (surviving pi's per-session `moduleCache: false` reloads). Servers are keyed by `(root, serverId)` and refcounted per call.
 - **Lazy spawn.** Servers spawn on first tool call for a matching extension. No eager warmup of the entire registry.
+- **Project-load readiness (`$/progress`).** `initialize` advertises `window.workDoneProgress`. For lazy-project servers (`typescript`, `vtsls`), `waitForProjectReady()` opens a seed file and waits for the server's `$/progress` project load to finish (or initial `publishDiagnostics` on inferred projects) so the first navigation query does not return empty partial results.
 - **Refcount.** Each `withLspClient(...)` call increments refCount on entry and decrements in `finally`. Idle reaping fires only when refCount hits zero AND lastUsedAt is older than the idle timeout.
 - **Idle timeout: 5 minutes.** Idle clients are stopped and removed from the pool.
 - **Init timeout: 60 seconds by default, overridable per-server.** A pending init older than the effective timeout is reaped, even if other callers are waiting on it. Set `initTimeoutMs` on a server entry in `.pi/lsp-client.json` to raise (or lower) this for that server only — see [Custom Servers / Configuration](#custom-servers--configuration).

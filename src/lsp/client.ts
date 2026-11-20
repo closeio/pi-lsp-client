@@ -3,7 +3,9 @@ import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { LspClientConnection } from "./connection.js";
+import { INIT_TIMEOUT_MS, PROJECT_LOAD_GRACE_MS } from "./constants.js";
 import { getLanguageId } from "./language-mappings.js";
+import { getServerReadiness } from "./readiness.js";
 import type {
 	Diagnostic,
 	DocumentSymbol,
@@ -15,6 +17,7 @@ import type {
 	SymbolInfo,
 	WorkspaceEdit,
 } from "./types.js";
+import { awaitWithSignal } from "./utils.js";
 
 const POST_OPEN_DELAY_MS = 1000;
 const POST_DIAGNOSTICS_WAIT_MS = 500;
@@ -24,12 +27,14 @@ export class LspClient extends LspClientConnection {
 	private readonly documentVersions = new Map<string, number>();
 	private readonly lastSyncedText = new Map<string, string>();
 	private readonly diagnosticPullErrors: Error[] = [];
+	private projectReady = false;
+	private projectReadyPromise: Promise<void> | null = null;
 
 	getDiagnosticPullErrors(): readonly Error[] {
 		return this.diagnosticPullErrors;
 	}
 
-	async openFile(filePath: string): Promise<void> {
+	async openFile(filePath: string, options?: { skipDelay?: boolean }): Promise<void> {
 		const absPath = resolve(filePath);
 		const uri = pathToFileURL(absPath).href;
 		const text = readFileSync(absPath, "utf-8");
@@ -51,7 +56,12 @@ export class LspClient extends LspClientConnection {
 			this.openedFiles.add(absPath);
 			this.documentVersions.set(uri, version);
 			this.lastSyncedText.set(uri, text);
-			await new Promise((r) => setTimeout(r, POST_OPEN_DELAY_MS));
+			if (!options?.skipDelay) {
+				await new Promise((r) => setTimeout(r, POST_OPEN_DELAY_MS));
+				if (getServerReadiness(this.server.id)?.waitForProjectProgress) {
+					await this.waitForActiveProgress();
+				}
+			}
 			return;
 		}
 
@@ -73,6 +83,58 @@ export class LspClient extends LspClientConnection {
 			textDocument: { uri },
 			text,
 		});
+	}
+
+	/**
+	 * Open a seed file and wait for the server's initial background project load
+	 * (`$/progress` `begin` -> `end`, or initial `publishDiagnostics` for
+	 * inferred projects without a config file). Shared across concurrent callers
+	 * so only one project load runs and callers can still abort independently.
+	 */
+	async waitForProjectReady(
+		seedFilePath: string,
+		signal?: AbortSignal,
+		options?: { background?: boolean },
+	): Promise<void> {
+		signal?.throwIfAborted();
+		const loadTimeoutMs = this.server.initTimeoutMs ?? INIT_TIMEOUT_MS;
+		const isBackground = options?.background === true;
+		if (this.projectReady) {
+			await this.waitForActiveProgress(loadTimeoutMs, signal, options);
+			return;
+		}
+
+		if (!this.projectReadyPromise) {
+			const absPath = resolve(seedFilePath);
+			const uri = pathToFileURL(absPath).href;
+			this.projectReadyPromise = (async () => {
+				await this.openFile(absPath, { skipDelay: true });
+				await this.waitForProgressCondition(
+					() => this.hasSeenProgress || this.diagnosticsReceivedUris.has(uri) || !this.isAlive(),
+					PROJECT_LOAD_GRACE_MS,
+					undefined,
+					{ background: isBackground },
+				);
+				if (this.activeProgressTokens.size > 0 && this.isAlive()) {
+					await this.waitForActiveProgress(loadTimeoutMs, undefined, { background: isBackground });
+				}
+				this.projectReady = true;
+			})().catch((err) => {
+				this.projectReadyPromise = null;
+				throw err;
+			});
+		}
+
+		if (!isBackground) {
+			this.refProgressWait();
+		}
+		try {
+			await awaitWithSignal(this.projectReadyPromise, signal);
+		} finally {
+			if (!isBackground) {
+				this.unrefProgressWait();
+			}
+		}
 	}
 
 	async definition(

@@ -194,7 +194,10 @@ export async function withLspClient<T>(
 			// `textDocument/didOpen` (typescript, vtsls) so workspace-scoped tools
 			// like workspace/symbol have a project to resolve against. openFile is
 			// idempotent for callers that open the file themselves.
-			if (getServerReadiness(server.id)?.requiresOpenFileToInitProject) {
+			const readiness = getServerReadiness(server.id);
+			if (readiness?.waitForProjectProgress) {
+				await client.waitForProjectReady(absPath, options.signal);
+			} else if (readiness?.requiresOpenFileToInitProject) {
 				await client.openFile(absPath);
 			}
 			return await callWithNotReadyRetry(client, fn, server.id, options.signal);

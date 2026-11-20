@@ -39,6 +39,14 @@ export interface ServerReadiness {
 	 */
 	requiresOpenFileToInitProject?: boolean;
 	/**
+	 * Wait for the server's initial `$/progress` project load (or initial
+	 * `publishDiagnostics` on inferred projects) after the first `didOpen`.
+	 * Needed for servers like `typescript-language-server` that answer
+	 * `textDocument/references` immediately with partial/empty results while
+	 * their project is still loading instead of returning a retryable error.
+	 */
+	waitForProjectProgress?: boolean;
+	/**
 	 * Recognize a server-specific (beyond the LSP spec codes) error that means
 	 * "still loading, retry". Receives the response error's code + message.
 	 */
@@ -55,8 +63,8 @@ export const SERVER_READINESS: Record<string, ServerReadiness> = {
 	// code 1 with message "No Project." until a document is opened (which
 	// creates the configured/inferred project). Verified against
 	// typescript@6.0.2 on a ~12k-file project. vtsls wraps the same tsserver.
-	typescript: { requiresOpenFileToInitProject: true, notReady: noProjectMatcher },
-	vtsls: { requiresOpenFileToInitProject: true, notReady: noProjectMatcher },
+	typescript: { requiresOpenFileToInitProject: true, waitForProjectProgress: true, notReady: noProjectMatcher },
+	vtsls: { requiresOpenFileToInitProject: true, waitForProjectProgress: true, notReady: noProjectMatcher },
 };
 
 function readCode(err: unknown): number | undefined {
