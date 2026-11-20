@@ -76,23 +76,25 @@ Errors, warnings, and hints from the language server BEFORE running build. Works
 
 ### `lsp_goto_definition`
 
-Jump to the definition of the symbol at a given position.
+Jump to the definition of a symbol by name (`symbol`, optional `filePath`) or by position (`filePath`, `line`, `character`). Includes the source line at each result.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `filePath` | `string` (required) | Source file. |
-| `line` | `number` (required) | 1-based line number. |
-| `character` | `number` (required) | 0-based column. |
+| `symbol` | `string` (optional) | Symbol name (e.g. `renderDiffMap` or `LspManager.getClient`). Alternative to `line`/`character`. |
+| `filePath` | `string` (optional) | Source file. Required with `line`/`character`; optional with `symbol`. |
+| `line` | `number` (optional) | 1-based line number. Required unless `symbol` is provided. |
+| `character` | `number` (optional) | 0-based column. Required unless `symbol` is provided. |
 
 ### `lsp_find_references`
 
-Find all usages of the symbol at a given position across the entire workspace.
+Find all usages of a symbol across the entire workspace by name (`symbol`, optional `filePath`) or by position (`filePath`, `line`, `character`). Includes the source line for each reference.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `filePath` | `string` (required) | Source file. |
-| `line` | `number` (required) | 1-based line number. |
-| `character` | `number` (required) | 0-based column. |
+| `symbol` | `string` (optional) | Symbol name (e.g. `renderDiffMap` or `LspManager.getClient`). Alternative to `line`/`character`. |
+| `filePath` | `string` (optional) | Source file. Required with `line`/`character`; optional with `symbol`. |
+| `line` | `number` (optional) | 1-based line number. Required unless `symbol` is provided. |
+| `character` | `number` (optional) | 0-based column. Required unless `symbol` is provided. |
 | `includeDeclaration` | `boolean` (optional) | Include the declaration itself. Default `true`. |
 
 ### `lsp_symbols`

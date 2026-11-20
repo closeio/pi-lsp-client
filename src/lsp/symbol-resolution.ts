@@ -56,7 +56,7 @@ function readCachedLines(filePath: string, cache: SourceLineCache): string[] | n
 	let lines = cache.get(filePath);
 	if (lines === undefined) {
 		try {
-			lines = readFileSync(filePath, "utf-8").split(/\r?\n/);
+			lines = readFileSync(filePath, "utf-8").split(/\r\n|[\n\r\u2028\u2029]/);
 		} catch {
 			lines = null;
 		}

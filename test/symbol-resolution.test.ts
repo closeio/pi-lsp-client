@@ -2,15 +2,18 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-
 import type { LspClient } from "../src/lsp/client.js";
+import { renderFindReferencesCall, renderGotoDefinitionCall } from "../src/lsp/renderers.js";
 import {
 	findIdentifierInFile,
 	findIdentifierPositionInRange,
 	parseSymbolQuery,
 	resolveSymbolPosition,
 } from "../src/lsp/symbol-resolution.js";
+import { lsp_find_references } from "../src/lsp/tools/find-references.js";
+import { lsp_goto_definition } from "../src/lsp/tools/goto-definition.js";
 import type { DocumentSymbol, SymbolInfo } from "../src/lsp/types.js";
 
 function makeFakeClient(opts: {
@@ -286,5 +289,36 @@ describe("resolveSymbolPosition", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("symbol-mode tool validation and rendering", () => {
+	const fakeTheme = {
+		fg: (_key: string, text: string) => text,
+		bold: (text: string) => text,
+	} as unknown as Theme;
+
+	it("#given neither symbol nor position #when executing find_references or goto_definition #then returns invalid_params error", async () => {
+		const ctx = { cwd: tmpdir(), sessionManager: {} } as never;
+
+		const refRes = await lsp_find_references.execute("call-1", {}, undefined, undefined, ctx);
+		const defRes = await lsp_goto_definition.execute("call-2", {}, undefined, undefined, ctx);
+
+		expect(refRes.details).toMatchObject({ errorKind: "invalid_params" });
+		expect(defRes.details).toMatchObject({ errorKind: "invalid_params" });
+	});
+
+	it("#given symbol-only args #when rendering tool calls #then displays symbol name cleanly", () => {
+		const refLines = renderFindReferencesCall({ symbol: "renderDiffMap" }, fakeTheme).render(120);
+		const defLines = renderGotoDefinitionCall(
+			{ symbol: "LspManager.getClient", filePath: "src/lsp/manager.ts" },
+			fakeTheme,
+		).render(120);
+
+		expect(refLines.join("\n")).toContain("lsp_find_references");
+		expect(refLines.join("\n")).toContain("renderDiffMap");
+		expect(defLines.join("\n")).toContain("lsp_goto_definition");
+		expect(defLines.join("\n")).toContain("LspManager.getClient");
+		expect(defLines.join("\n")).toContain("src/lsp/manager.ts");
 	});
 });

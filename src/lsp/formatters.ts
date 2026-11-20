@@ -41,7 +41,7 @@ export function readSourceLine(filePath: string, zeroBasedLine: number, cache?: 
 	let lines: string[] | null | undefined = cache?.get(filePath);
 	if (lines === undefined) {
 		try {
-			lines = readFileSync(filePath, "utf-8").split(/\r?\n/);
+			lines = readFileSync(filePath, "utf-8").split(/\r\n|[\n\r\u2028\u2029]/);
 		} catch {
 			lines = null;
 		}

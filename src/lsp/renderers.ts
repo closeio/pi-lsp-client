@@ -38,6 +38,13 @@ interface PositionArgs {
 	character: number;
 }
 
+interface SymbolOrPositionArgs {
+	symbol?: string;
+	filePath?: string;
+	line?: number;
+	character?: number;
+}
+
 interface SymbolsArgs {
 	filePath: string;
 	scope: "document" | "workspace";
@@ -213,11 +220,21 @@ export function renderDiagnosticsResult(
 	return new Text(lines.join("\n"), 0, 0);
 }
 
-export function renderGotoDefinitionCall(args: PositionArgs, theme: Theme): Text {
+function formatSymbolOrPositionTarget(args: SymbolOrPositionArgs, theme: Theme): string {
+	const badge = args.filePath ? serverBadge(args.filePath, theme) : "";
+	if (args.symbol && (args.line === undefined || args.character === undefined)) {
+		const sym = theme.fg("accent", shorten(args.symbol, 50));
+		const scope = args.filePath ? theme.fg("muted", ` (${shorten(args.filePath, PATH_BUDGET)})`) : "";
+		return badge + sym + scope;
+	}
+	const file = args.filePath ? shorten(args.filePath, PATH_BUDGET) : "";
+	const loc = theme.fg("accent", `${file}:${args.line ?? 0}:${args.character ?? 0}`);
+	return badge + loc;
+}
+
+export function renderGotoDefinitionCall(args: SymbolOrPositionArgs, theme: Theme): Text {
 	const head = theme.fg("toolTitle", theme.bold("lsp_goto_definition "));
-	const badge = serverBadge(args.filePath, theme);
-	const loc = theme.fg("accent", `${shorten(args.filePath, PATH_BUDGET)}:${args.line}:${args.character}`);
-	return new Text(head + badge + loc, 0, 0);
+	return new Text(head + formatSymbolOrPositionTarget(args, theme), 0, 0);
 }
 
 export function renderGotoDefinitionResult(
@@ -242,11 +259,12 @@ export function renderGotoDefinitionResult(
 	return new Text(headStr + tail, 0, 0);
 }
 
-export function renderFindReferencesCall(args: PositionArgs & { includeDeclaration?: boolean }, theme: Theme): Text {
+export function renderFindReferencesCall(
+	args: SymbolOrPositionArgs & { includeDeclaration?: boolean },
+	theme: Theme,
+): Text {
 	const head = theme.fg("toolTitle", theme.bold("lsp_find_references "));
-	const badge = serverBadge(args.filePath, theme);
-	const loc = theme.fg("accent", `${shorten(args.filePath, PATH_BUDGET)}:${args.line}:${args.character}`);
-	return new Text(head + badge + loc, 0, 0);
+	return new Text(head + formatSymbolOrPositionTarget(args, theme), 0, 0);
 }
 
 export function renderFindReferencesResult(

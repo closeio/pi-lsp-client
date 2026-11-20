@@ -30,18 +30,24 @@ describe("lsp_diagnostics tool definition", () => {
 });
 
 describe("lsp_goto_definition tool definition", () => {
-	it("#given goto tool #when inspecting metadata #then matches name and required params", () => {
+	it("#given goto tool #when inspecting metadata #then matches name and supports symbol or position params", () => {
 		// given / when / then
 		expect(lsp_goto_definition.name).toBe("lsp_goto_definition");
-		expect(lsp_goto_definition.parameters.required).toEqual(["filePath", "line", "character"]);
+		expect(lsp_goto_definition.parameters.properties).toHaveProperty("symbol");
+		expect(lsp_goto_definition.parameters.properties).toHaveProperty("filePath");
+		expect(lsp_goto_definition.parameters.properties).toHaveProperty("line");
+		expect(lsp_goto_definition.parameters.properties).toHaveProperty("character");
 	});
 });
 
 describe("lsp_find_references tool definition", () => {
-	it("#given references tool #when inspecting metadata #then matches name and required params", () => {
+	it("#given references tool #when inspecting metadata #then matches name and supports symbol or position params", () => {
 		// given / when / then
 		expect(lsp_find_references.name).toBe("lsp_find_references");
-		expect(lsp_find_references.parameters.required).toEqual(["filePath", "line", "character"]);
+		expect(lsp_find_references.parameters.properties).toHaveProperty("symbol");
+		expect(lsp_find_references.parameters.properties).toHaveProperty("filePath");
+		expect(lsp_find_references.parameters.properties).toHaveProperty("line");
+		expect(lsp_find_references.parameters.properties).toHaveProperty("character");
 	});
 });
 
@@ -103,10 +109,24 @@ describe("pi-schema argument validation", () => {
 			name: "lsp_symbols",
 			arguments: { filePath: "src/index.ts", scope: "document" },
 		});
+		const refsBySymbol = validateToolArguments(lsp_find_references, {
+			type: "toolCall",
+			id: "call-2b",
+			name: "lsp_find_references",
+			arguments: { symbol: "renderDiffMap" },
+		});
+		const defBySymbol = validateToolArguments(lsp_goto_definition, {
+			type: "toolCall",
+			id: "call-2c",
+			name: "lsp_goto_definition",
+			arguments: { symbol: "LspManager.getClient", filePath: "src/lsp/manager.ts" },
+		});
 
 		// then
 		expect(diag).toEqual({ filePath: "src/index.ts", severity: "error" });
 		expect(sym).toEqual({ filePath: "src/index.ts", scope: "document" });
+		expect(refsBySymbol).toEqual({ symbol: "renderDiffMap" });
+		expect(defBySymbol).toEqual({ symbol: "LspManager.getClient", filePath: "src/lsp/manager.ts" });
 		expect(() =>
 			validateToolArguments(lsp_diagnostics, {
 				type: "toolCall",
