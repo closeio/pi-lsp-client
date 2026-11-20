@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,6 +10,7 @@ import {
 	formatDiagnostic,
 	formatDocumentSymbol,
 	formatLocation,
+	formatLocationWithSource,
 	formatPrepareRenameResult,
 	formatSeverity,
 	formatSymbolInfo,
@@ -50,6 +55,63 @@ describe("formatLocation", () => {
 
 		// then
 		expect(formatted).toBe("/tmp/bar.ts:1:0");
+	});
+});
+
+describe("formatLocationWithSource", () => {
+	it("#given a Location pointing at a real file #when formatting #then includes the trimmed source line", () => {
+		// given
+		const dir = mkdtempSync(join(tmpdir(), "pi-lsp-fmt-"));
+		try {
+			const filePath = join(dir, "sample.ts");
+			writeFileSync(filePath, "const a = 1;\n    export function renderDiffMap(x: string) { return x; }\n");
+			const loc = {
+				uri: pathToFileURL(filePath).href,
+				range: { start: { line: 1, character: 20 }, end: { line: 1, character: 33 } },
+			};
+
+			// when
+			const formatted = formatLocationWithSource(loc, new Map());
+
+			// then
+			expect(formatted).toBe(`${filePath}:2:20  export function renderDiffMap(x: string) { return x; }`);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("#given a Location pointing at a missing file #when formatting #then falls back to path:line:col", () => {
+		// given
+		const loc = {
+			uri: "file:///nonexistent/pi-lsp-missing-file.ts",
+			range: { start: { line: 4, character: 2 }, end: { line: 4, character: 6 } },
+		};
+
+		// when / then
+		expect(formatLocationWithSource(loc)).toBe("/nonexistent/pi-lsp-missing-file.ts:5:2");
+	});
+
+	it("#given a very long source line #when formatting #then truncates the source preview", () => {
+		// given
+		const dir = mkdtempSync(join(tmpdir(), "pi-lsp-fmt-long-"));
+		try {
+			const filePath = join(dir, "minified.ts");
+			writeFileSync(filePath, `const x = "${"a".repeat(300)}";\n`);
+			const loc = {
+				uri: pathToFileURL(filePath).href,
+				range: { start: { line: 0, character: 6 }, end: { line: 0, character: 7 } },
+			};
+
+			// when
+			const formatted = formatLocationWithSource(loc);
+
+			// then
+			const preview = formatted.slice(`${filePath}:1:6  `.length);
+			expect(preview.length).toBe(200);
+			expect(preview.endsWith("…")).toBe(true);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 
