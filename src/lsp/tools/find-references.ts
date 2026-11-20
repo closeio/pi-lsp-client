@@ -30,6 +30,8 @@ export const lsp_find_references = defineTool({
 	name: "lsp_find_references",
 	label: "LSP Find References",
 	description: "Find ALL usages/references of a symbol across the entire workspace.",
+	promptSnippet: "Find all workspace references to a symbol using the language server",
+	promptGuidelines: ["Prefer lsp_find_references over grep when enumerating callers or usages of a symbol."],
 	parameters: Params,
 	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		const manager = getManagerForSession(ctx.sessionManager);

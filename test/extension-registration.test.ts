@@ -117,3 +117,24 @@ describe("pi-schema argument validation", () => {
 		).toThrow();
 	});
 });
+
+describe("system prompt metadata", () => {
+	const allTools = [
+		lsp_diagnostics,
+		lsp_goto_definition,
+		lsp_find_references,
+		lsp_symbols,
+		lsp_prepare_rename,
+		lsp_rename,
+	];
+
+	it("#given all registered LSP tools #when inspecting promptSnippet and promptGuidelines #then every tool opts into system prompt advertising and names itself in its guidelines", () => {
+		for (const tool of allTools) {
+			expect(tool.promptSnippet).toBeTruthy();
+			expect(tool.promptGuidelines?.length).toBeGreaterThan(0);
+			for (const guideline of tool.promptGuidelines ?? []) {
+				expect(guideline).toContain(tool.name);
+			}
+		}
+	});
+});

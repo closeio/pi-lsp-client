@@ -26,6 +26,8 @@ export const lsp_goto_definition = defineTool({
 	name: "lsp_goto_definition",
 	label: "LSP Goto Definition",
 	description: "Jump to symbol definition. Find WHERE something is defined.",
+	promptSnippet: "Jump to a symbol's definition using the language server",
+	promptGuidelines: ["Prefer lsp_goto_definition over grep when locating where a symbol is defined."],
 	parameters: Params,
 	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		const manager = getManagerForSession(ctx.sessionManager);

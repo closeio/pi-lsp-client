@@ -45,6 +45,8 @@ export const lsp_prepare_rename = defineTool({
 	name: "lsp_prepare_rename",
 	label: "LSP Prepare Rename",
 	description: "Check if rename is valid at a given position. Use BEFORE lsp_rename.",
+	promptSnippet: "Check whether a symbol at a position can be renamed",
+	promptGuidelines: ["Run lsp_prepare_rename before lsp_rename to verify the symbol can be renamed safely."],
 	parameters: PrepareParams,
 	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		const manager = getManagerForSession(ctx.sessionManager);
@@ -90,6 +92,8 @@ export const lsp_rename = defineTool({
 	name: "lsp_rename",
 	label: "LSP Rename",
 	description: "Rename symbol across the entire workspace. APPLIES changes to all files.",
+	promptSnippet: "Rename a symbol across the workspace using the language server",
+	promptGuidelines: ["Prefer lsp_rename over manual search-and-replace for cross-file symbol renames."],
 	parameters: RenameParams,
 	executionMode: "sequential",
 	async execute(_toolCallId, params, signal, onUpdate, ctx) {

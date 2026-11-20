@@ -159,6 +159,8 @@ export const lsp_diagnostics = defineTool({
 	description:
 		"Get errors, warnings, and hints from the language server BEFORE running build. " +
 		"Works for both single files and directories - file extension is auto-detected for directories.",
+	promptSnippet: "Get type errors, warnings, and hints from the language server for a file or directory",
+	promptGuidelines: ["Use lsp_diagnostics to check for type and lint errors before running a full build."],
 	parameters: Params,
 	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		return runLspDiagnostics(params, signal, onUpdate, ctx);
