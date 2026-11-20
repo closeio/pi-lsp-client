@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Normalize `file://` URIs so paths with parentheses return diagnostics without stalling.
 - Re-sync context files after project load and cancel `openFile` waits on abort.
 - Evict pooled servers on config change, keep warming servers alive past `initTimeoutMs`, and guard concurrent dead-client recovery.
+- Limit `session_start` warmup to the workspace's primary language inside `cwd`.
 
 ## [0.2.1] - 2026-10-31
 

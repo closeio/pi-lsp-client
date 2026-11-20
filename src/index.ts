@@ -63,13 +63,13 @@ export interface PostEditToolResultRegistrar {
 /**
  * pi-lsp-client — Language Server Protocol integration for the pi coding agent.
  *
- * Ports omo's LSP tool stack as a pi extension. Each pi session owns its own
- * `LspManager` (resolved via `getManagerForSession(ctx.sessionManager)`),
- * with refCount-based client lifecycle, idle cleanup (5min), init reaping
- * (60s), typed crash retry for read tools, and a `/lsp` inspector backed by
- * an explicit getSnapshot() API. Session scoping means concurrent sub-agent
- * sessions in one Node process never share clients - one session's
- * `session_shutdown` cannot dispose servers another session still holds.
+ * Ports omo's LSP tool stack as a pi extension. Sessions in one Node process
+ * share a single `LspManager` stored on `globalThis` (resolved via
+ * `getManagerForSession(ctx.sessionManager)`), surviving pi's per-session
+ * `moduleCache: false` reloads. Provides refCount-based client lifecycle,
+ * idle cleanup (5min), init reaping (60s), `$/progress` project-load waiting,
+ * typed crash retry for read tools, and a `/lsp` inspector backed by
+ * `getSnapshot()`.
  *
  * Tools registered:
  *   - lsp_diagnostics      — errors/warnings/info from language servers
@@ -311,15 +311,17 @@ function runWarmup(id: string, ctx: ExtensionContext): void {
 	}
 }
 
+const DATA_DOC_EXTENSIONS = new Set([".json", ".jsonc", ".yaml", ".yml", ".toml", ".xml", ".md", ".markdown"]);
+
 function warmupWorkspace(cwd: string, manager: LspManager): void {
 	try {
-		for (const seed of inferSeedFilesByFrequency(cwd)) {
-			const lookup = findServerForExtension(seed.extension);
-			if (lookup.status !== "found") continue;
-			const root = findWorkspaceRoot(seed.filePath);
-			manager.warmupClient(root, lookup.server, seed.filePath);
-			return;
-		}
+		const seeds = inferSeedFilesByFrequency(cwd);
+		const primary = seeds.find((s) => !DATA_DOC_EXTENSIONS.has(s.extension)) ?? seeds[0];
+		if (!primary) return;
+		const lookup = findServerForExtension(primary.extension);
+		if (lookup.status !== "found") return;
+		const root = findWorkspaceRoot(primary.filePath);
+		manager.warmupClient(root, lookup.server, primary.filePath);
 	} catch {
 		// Background warmup is best-effort and must never disrupt session_start.
 	}

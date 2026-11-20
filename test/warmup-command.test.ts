@@ -213,4 +213,133 @@ describe("session_start background warmup", () => {
 		expect(calls[0]?.server.id).toBe("typescript");
 		expect(calls[0]?.seedFile).toBe(join(projectDir, "src", "app.ts"));
 	});
+
+	it("#given primary language server is not installed #when session_start fires #then does not fall through to warm a minor language", async () => {
+		// given: 4 Rust files (primary) and 1 TS file (minor); rust disabled/uninstalled, ts installed
+		mkdirSync(join(projectDir, "src"), { recursive: true });
+		mkdirSync(join(projectDir, "scripts"), { recursive: true });
+		writeFileSync(join(projectDir, "Cargo.toml"), '[package]\nname = "demo"\n');
+		writeFileSync(join(projectDir, "src", "a.rs"), "fn a() {}\n");
+		writeFileSync(join(projectDir, "src", "b.rs"), "fn b() {}\n");
+		writeFileSync(join(projectDir, "src", "c.rs"), "fn c() {}\n");
+		writeFileSync(join(projectDir, "src", "d.rs"), "fn d() {}\n");
+		writeFileSync(join(projectDir, "scripts", "helper.ts"), "export const x = 1;\n");
+		writeFileSync(
+			join(projectDir, ".pi", "lsp-client.json"),
+			JSON.stringify({
+				lsp: {
+					rust: { command: ["definitely-missing-rust-analyzer-bin"], extensions: [".rs"] },
+					typescript: { command: ["node"], extensions: [".ts"] },
+				},
+			}),
+		);
+		let sessionStartHandler: ((event: unknown, ctx: unknown) => Promise<void>) | undefined;
+		const pi = {
+			registerTool: () => {},
+			registerCommand: () => {},
+			on: (event: string, handler: (event: unknown, ctx: unknown) => Promise<void>) => {
+				if (event === "session_start") sessionStartHandler = handler;
+			},
+		} as unknown as ExtensionAPI;
+		registerExtension(pi);
+		if (!sessionStartHandler) throw new Error("expected session_start handler");
+
+		const warmup = vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation(() => {});
+
+		// when
+		await sessionStartHandler(
+			{ type: "session_start" },
+			{
+				cwd: projectDir,
+				sessionManager,
+				ui: { setStatus: () => {}, theme: { fg: (_c: string, s: string) => s } },
+			},
+		);
+
+		// then
+		expect(warmup).not.toHaveBeenCalled();
+	});
+
+	it("#given a parent directory containing a child git repo #when session_start fires #then does not warm the child repo", async () => {
+		// given: projectDir has no .git, but child-repo has its own .git and TS files
+		mkdirSync(join(projectDir, "child-repo", ".git"), { recursive: true });
+		mkdirSync(join(projectDir, "child-repo", "src"), { recursive: true });
+		writeFileSync(join(projectDir, "child-repo", "package.json"), "{}");
+		writeFileSync(join(projectDir, "child-repo", "src", "app.ts"), "export const x = 1;\n");
+		writeFileSync(
+			join(projectDir, ".pi", "lsp-client.json"),
+			JSON.stringify({
+				lsp: { typescript: { command: ["node"], extensions: [".ts"] } },
+			}),
+		);
+		let sessionStartHandler: ((event: unknown, ctx: unknown) => Promise<void>) | undefined;
+		const pi = {
+			registerTool: () => {},
+			registerCommand: () => {},
+			on: (event: string, handler: (event: unknown, ctx: unknown) => Promise<void>) => {
+				if (event === "session_start") sessionStartHandler = handler;
+			},
+		} as unknown as ExtensionAPI;
+		registerExtension(pi);
+		if (!sessionStartHandler) throw new Error("expected session_start handler");
+
+		const warmup = vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation(() => {});
+
+		// when
+		await sessionStartHandler(
+			{ type: "session_start" },
+			{
+				cwd: projectDir,
+				sessionManager,
+				ui: { setStatus: () => {}, theme: { fg: (_c: string, s: string) => s } },
+			},
+		);
+
+		// then
+		expect(warmup).not.toHaveBeenCalled();
+	});
+
+	it("#given a monorepo whose package root sits below cwd #when session_start fires #then warms up the package root", async () => {
+		// given: projectDir is the repo root, while apps/ui has its own package.json
+		mkdirSync(join(projectDir, "apps", "ui", "src"), { recursive: true });
+		writeFileSync(join(projectDir, "apps", "ui", "package.json"), "{}");
+		writeFileSync(join(projectDir, "apps", "ui", "src", "app.ts"), "export const x = 1;\n");
+		writeFileSync(
+			join(projectDir, ".pi", "lsp-client.json"),
+			JSON.stringify({
+				lsp: { typescript: { command: ["node"], extensions: [".ts"] } },
+			}),
+		);
+		let sessionStartHandler: ((event: unknown, ctx: unknown) => Promise<void>) | undefined;
+		const pi = {
+			registerTool: () => {},
+			registerCommand: () => {},
+			on: (event: string, handler: (event: unknown, ctx: unknown) => Promise<void>) => {
+				if (event === "session_start") sessionStartHandler = handler;
+			},
+		} as unknown as ExtensionAPI;
+		registerExtension(pi);
+		if (!sessionStartHandler) throw new Error("expected session_start handler");
+
+		const calls: Array<{ root: string; server: ResolvedServer; seedFile: string | undefined }> = [];
+		vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation((root, server, seedFile) => {
+			calls.push({ root, server, seedFile });
+		});
+
+		// when
+		await sessionStartHandler(
+			{ type: "session_start" },
+			{
+				cwd: projectDir,
+				sessionManager,
+				ui: { setStatus: () => {}, theme: { fg: (_c: string, s: string) => s } },
+			},
+		);
+
+		// then
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.root).toBe(join(projectDir, "apps", "ui"));
+		expect(calls[0]?.server.id).toBe("typescript");
+		expect(calls[0]?.seedFile).toBe(join(projectDir, "apps", "ui", "src", "app.ts"));
+	});
 });

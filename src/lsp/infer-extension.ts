@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 
 import { EXT_TO_LANG } from "./language-mappings.js";
@@ -51,7 +51,7 @@ export function inferSeedFilesByFrequency(directory: string): DirectorySeed[] {
 			scanned++;
 
 			if (stat.isDirectory()) {
-				if (!shouldSkipDirectory(entry)) {
+				if (!shouldSkipDirectory(entry) && !existsSync(join(fullPath, ".git"))) {
 					walk(fullPath);
 				}
 			} else if (stat.isFile()) {
