@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as a peer dependency.
 - Shared LSP server pool across sessions in one Node process that survives pi's
   `moduleCache: false` reloads.
+- Background warmup on `session_start` for the  dominant server.
 - Prevent cold `textDocument/references` calls from returning partial/empty
   results while LSP server is still loading the project.
 

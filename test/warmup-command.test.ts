@@ -124,4 +124,93 @@ describe("/lsp warmup", () => {
 		expect(warmup).not.toHaveBeenCalled();
 		expect(notifications).toEqual([{ message: "Unknown server id 'does-not-exist'.", level: "error" }]);
 	});
+
+	it("#given a workspace with source and config files #when warming up typescript #then passes a non-config seed file", async () => {
+		// given
+		mkdirSync(join(projectDir, "src"), { recursive: true });
+		writeFileSync(join(projectDir, "vitest.config.ts"), "export default {};\n");
+		writeFileSync(join(projectDir, "src", "app.ts"), "export const x = 1;\n");
+		const calls: Array<{ root: string; server: ResolvedServer; seedFile: string | undefined }> = [];
+		vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation((root, server, seedFile) => {
+			calls.push({ root, server, seedFile });
+		});
+		const handler = captureLspCommand();
+		const notifications: Notification[] = [];
+
+		// when
+		await handler("warmup typescript", contextWithNotifications(notifications));
+
+		// then
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.seedFile).toBe(join(projectDir, "src", "app.ts"));
+	});
+
+	it("#given dot-directories containing source files #when warming up typescript #then skips dot-directories and picks project source", async () => {
+		// given
+		mkdirSync(join(projectDir, ".github", "actions"), { recursive: true });
+		mkdirSync(join(projectDir, ".cache", "tools"), { recursive: true });
+		mkdirSync(join(projectDir, "src"), { recursive: true });
+		writeFileSync(join(projectDir, ".github", "actions", "check.test.ts"), "export const a = 1;\n");
+		writeFileSync(join(projectDir, ".cache", "tools", "generated.ts"), "export const b = 2;\n");
+		writeFileSync(join(projectDir, "src", "main.ts"), "export const c = 3;\n");
+		const calls: Array<{ root: string; server: ResolvedServer; seedFile: string | undefined }> = [];
+		vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation((root, server, seedFile) => {
+			calls.push({ root, server, seedFile });
+		});
+		const handler = captureLspCommand();
+		const notifications: Notification[] = [];
+
+		// when
+		await handler("warmup typescript", contextWithNotifications(notifications));
+
+		// then
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.seedFile).toBe(join(projectDir, "src", "main.ts"));
+	});
+});
+
+describe("session_start background warmup", () => {
+	it("#given a project with a configured server #when session_start fires #then warms up with a seed file", async () => {
+		// given
+		mkdirSync(join(projectDir, "src"), { recursive: true });
+		writeFileSync(join(projectDir, "package.json"), "{}");
+		writeFileSync(join(projectDir, "src", "app.ts"), "export const x = 1;\n");
+		writeFileSync(
+			join(projectDir, ".pi", "lsp-client.json"),
+			JSON.stringify({
+				lsp: { typescript: { command: ["node"], extensions: [".ts"] } },
+			}),
+		);
+		let sessionStartHandler: ((event: unknown, ctx: unknown) => Promise<void>) | undefined;
+		const pi = {
+			registerTool: () => {},
+			registerCommand: () => {},
+			on: (event: string, handler: (event: unknown, ctx: unknown) => Promise<void>) => {
+				if (event === "session_start") sessionStartHandler = handler;
+			},
+		} as unknown as ExtensionAPI;
+		registerExtension(pi);
+		if (!sessionStartHandler) throw new Error("expected session_start handler");
+
+		const calls: Array<{ root: string; server: ResolvedServer; seedFile: string | undefined }> = [];
+		vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation((root, server, seedFile) => {
+			calls.push({ root, server, seedFile });
+		});
+
+		// when
+		await sessionStartHandler(
+			{ type: "session_start" },
+			{
+				cwd: projectDir,
+				sessionManager,
+				ui: { setStatus: () => {}, theme: { fg: (_c: string, s: string) => s } },
+			},
+		);
+
+		// then
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.root).toBe(projectDir);
+		expect(calls[0]?.server.id).toBe("typescript");
+		expect(calls[0]?.seedFile).toBe(join(projectDir, "src", "app.ts"));
+	});
 });
