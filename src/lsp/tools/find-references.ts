@@ -1,5 +1,5 @@
-import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 import { withLspClient } from "../client-wrapper.js";
 import { DEFAULT_MAX_REFERENCES } from "../constants.js";
@@ -37,7 +37,13 @@ export const lsp_find_references = defineTool({
 			const result = await withLspClient<Location[]>(
 				params.filePath,
 				async (client) =>
-					client.references(params.filePath, params.line, params.character, params.includeDeclaration ?? true),
+					client.references(
+						params.filePath,
+						params.line,
+						params.character,
+						params.includeDeclaration ?? true,
+						signal,
+					),
 				"references",
 				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);

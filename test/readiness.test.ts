@@ -53,6 +53,8 @@ describe("getServerReadiness", () => {
 	it("only describes servers whose cold behavior needs handling", () => {
 		expect(getServerReadiness("typescript")?.requiresOpenFileToInitProject).toBe(true);
 		expect(getServerReadiness("vtsls")?.requiresOpenFileToInitProject).toBe(true);
+		expect(getServerReadiness("typescript")?.waitForProjectProgress).toBe(true);
+		expect(getServerReadiness("vtsls")?.waitForProjectProgress).toBe(true);
 		// ty (blocks) and pyright (soft-empty) need nothing
 		expect(getServerReadiness("ty")).toBeUndefined();
 		expect(getServerReadiness("pyright")).toBeUndefined();

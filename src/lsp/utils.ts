@@ -1,4 +1,4 @@
-import { LspProcessExitedError } from "./errors.js";
+import { isLspProcessExitedError } from "./errors.js";
 
 const RUST_SRC_REPAIR_MESSAGE = [
 	"rust-analyzer exited while loading Rust standard library sources.",
@@ -18,7 +18,7 @@ export function errorMessage(error: unknown): string {
 }
 
 export function formatKnownLspStartupFailure(error: unknown): string | null {
-	if (!(error instanceof LspProcessExitedError)) return null;
+	if (!isLspProcessExitedError(error)) return null;
 	if (error.serverId !== "rust") return null;
 
 	const details = error.stderrTail ?? error.message;
@@ -42,4 +42,53 @@ export function handleMissingDependencyError(error: unknown): string | null {
 
 	const message = errorMessage(error);
 	return message.includes("NOT INSTALLED") || message.includes("No LSP server configured") ? message : null;
+}
+
+export function abortableSleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+			return;
+		}
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+		};
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
+export function awaitWithSignal<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+	if (!signal) return promise;
+	return new Promise<T>((resolve, reject) => {
+		let settled = false;
+		const onAbort = () => {
+			if (settled) return;
+			settled = true;
+			reject(new DOMException("Aborted", "AbortError"));
+		};
+		if (signal.aborted) {
+			onAbort();
+			return;
+		}
+		signal.addEventListener("abort", onAbort, { once: true });
+		promise.then(
+			(value) => {
+				if (settled) return;
+				settled = true;
+				signal.removeEventListener("abort", onAbort);
+				resolve(value);
+			},
+			(err) => {
+				if (settled) return;
+				settled = true;
+				signal.removeEventListener("abort", onAbort);
+				reject(err);
+			},
+		);
+	});
 }

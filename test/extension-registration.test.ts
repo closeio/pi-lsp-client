@@ -1,4 +1,5 @@
-import { Type } from "@earendil-works/pi-ai";
+import { validateToolArguments } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 
 import { lsp_diagnostics } from "../src/lsp/tools/diagnostics.js";
@@ -68,5 +69,51 @@ describe("lsp_rename tool definition", () => {
 		expect(lsp_rename.name).toBe("lsp_rename");
 		expect(lsp_rename.executionMode).toBe("sequential");
 		expect(lsp_rename.parameters.required).toEqual(["filePath", "line", "character", "newName"]);
+	});
+});
+
+describe("pi-schema argument validation", () => {
+	it("#given diagnostics and symbols schemas #when inspecting enum properties #then expose JSON Schema string enums", () => {
+		// given / when
+		const severity = lsp_diagnostics.parameters.properties.severity;
+		const scope = lsp_symbols.parameters.properties.scope;
+
+		// then
+		expect(severity).toMatchObject({
+			type: "string",
+			enum: ["error", "warning", "information", "hint", "all"],
+		});
+		expect(scope).toMatchObject({
+			type: "string",
+			enum: ["document", "workspace"],
+		});
+	});
+
+	it("#given tool schemas #when validating arguments with pi-ai #then accepts valid calls and rejects invalid enum values", () => {
+		// given / when
+		const diag = validateToolArguments(lsp_diagnostics, {
+			type: "toolCall",
+			id: "call-1",
+			name: "lsp_diagnostics",
+			arguments: { filePath: "src/index.ts", severity: "error" },
+		});
+		const sym = validateToolArguments(lsp_symbols, {
+			type: "toolCall",
+			id: "call-2",
+			name: "lsp_symbols",
+			arguments: { filePath: "src/index.ts", scope: "document" },
+		});
+
+		// then
+		expect(diag).toEqual({ filePath: "src/index.ts", severity: "error" });
+		expect(sym).toEqual({ filePath: "src/index.ts", scope: "document" });
+		expect(() =>
+			validateToolArguments(lsp_diagnostics, {
+				type: "toolCall",
+				id: "call-3",
+				name: "lsp_diagnostics",
+				arguments: { filePath: "src/index.ts", severity: "invalid" },
+			}),
+		).toThrow();
 	});
 });

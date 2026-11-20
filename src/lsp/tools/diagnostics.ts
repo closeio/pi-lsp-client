@@ -1,7 +1,8 @@
 import { resolve } from "node:path";
-import { StringEnum, Type } from "@earendil-works/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 import { isDirectoryPath, withLspClient } from "../client-wrapper.js";
 import { DEFAULT_MAX_DIAGNOSTICS } from "../constants.js";
@@ -15,9 +16,11 @@ import { handleMissingDependencyError } from "../utils.js";
 const Params = Type.Object({
 	filePath: Type.String({ description: "File or directory path to check diagnostics for" }),
 	severity: Type.Optional(
-		StringEnum(["error", "warning", "information", "hint", "all"] as const, {
-			description: "Filter by severity level",
-		}),
+		Type.Unsafe<SeverityFilter>(
+			StringEnum(["error", "warning", "information", "hint", "all"] as const, {
+				description: "Filter by severity level",
+			}),
+		),
 	),
 });
 
@@ -90,7 +93,7 @@ export async function runLspDiagnostics(
 
 		const result = await withLspClient<{ items?: Diagnostic[] } | Diagnostic[] | null | undefined>(
 			params.filePath,
-			async (client) => client.diagnostics(params.filePath),
+			async (client) => client.diagnostics(params.filePath, signal),
 			"diagnostics",
 			{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 		);

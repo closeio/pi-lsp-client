@@ -14,7 +14,7 @@ Conventions for human contributors and AI agents working on this repository.
 
 ## Commands
 
-- `bun install` — install dev dependencies (Bun 1.4.2, `bun.lock`). Run after clone.
+- `bun install` — install dev dependencies (Bun 1.4.4, `bun.lock`). Run after clone.
 - `bun run test` — run vitest test suite once (tests execute on Node).
 - `bun run typecheck` — strict TypeScript check (no emit).
 - `bun run check` — type check + biome.
@@ -28,18 +28,22 @@ Conventions for human contributors and AI agents working on this repository.
 
 - No Bun APIs. Runtime is Node only. The transport layer uses
   `node:child_process.spawn` and native Node streams.
-- LSP server processes are managed exclusively by `LspManager`. There is one
-  `LspManager` instance **per pi session**, resolved via
-  `getManagerForSession(ctx.sessionManager)` in `manager-registry.ts`. Tools
-  acquire via `withLspClient(..., { manager, signal })` and the wrapper
-  handles refCount + retry. Never reintroduce a process-wide singleton -
-  one session's `session_shutdown` would dispose servers other concurrent
-  sub-agent sessions are still using.
+- LSP server processes are managed exclusively by a process-wide shared
+  `LspManager` stored on `globalThis[Symbol.for("pi-lsp-client.shared-pool.v1")]`
+  in `manager-registry.ts`, resolved via `getManagerForSession(ctx.sessionManager)`.
+  Storing the pool on `globalThis` survives pi's `moduleCache: false` extension
+  reloads so concurrent and sequential sub-agent sessions in one Node process
+  share warm servers keyed by `(root, serverId)`. Tools acquire via
+  `withLspClient(..., { manager, signal })` and the wrapper handles refCount +
+  retry. `disposeManagerForSession` unregisters a session without killing warm
+  shared servers; idle servers are reaped after `IDLE_TIMEOUT_MS` and killed
+  synchronously on `process.on("exit")`. Use `disposeSharedManager()` in tests.
 - `lsp_rename` runs with `executionMode: "sequential"` because it mutates
   files via a workspace edit spanning arbitrary paths.
-- No raw `SIGINT`/`SIGTERM` handlers. Cleanup happens via
-  `pi.on("session_shutdown")` plus an idempotent `process.once("exit")`
-  fallback that returns a disposer.
+- No raw `SIGINT`/`SIGTERM` handlers. `pi.on("session_shutdown")` clears UI
+  state and unregisters the session; idle servers are reaped after
+  `IDLE_TIMEOUT_MS` and killed synchronously via a `process.on("exit")`
+  `killSync` handler with a disposer.
 - TUI rendering reads from typed `details` returned by tool `execute`.
   Renderers never parse formatter strings to recover details.
 - Server installation is auditable: `/lsp install <id>` runs documented
@@ -57,7 +61,7 @@ Conventions for human contributors and AI agents working on this repository.
 - Don't bypass the manager's refCount accounting. Always acquire via
   `withLspClient` (or `manager.getClient` + `releaseClient` paired in a
   `finally`) so idle reaping and shutdown work correctly.
-- Don't resolve the manager from anywhere except `ctx.sessionManager` in a
-  tool / command / event handler. There is no module-level `getLspManager()`
-  any more; trying to grab a manager at activate-time (closure) would silently
-  capture the wrong session in multi-session hosts.
+- Don't resolve the manager from anywhere except `getManagerForSession(ctx.sessionManager)`
+  in a tool / command / event handler, and never call `stopAll()` from a single
+  session's `session_shutdown` (that would kill servers other concurrent or
+  upcoming sessions in the same Node process share).

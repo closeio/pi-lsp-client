@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- CI and the development docs use Bun 1.4.4 (was 1.4.2).
+- Support for `pi>1.1.0`. `pi` packages no longer export `TypeBox`. Now added
+  as a peer dependency.
+- Shared LSP server pool across sessions in one Node process that survives pi's
+  `moduleCache: false` reloads.
+- Background warmup on `session_start` for the  dominant server.
+- Prevent cold `textDocument/references` calls from returning partial/empty
+  results while LSP server is still loading the project.
+
+### Fixed
+
+- Normalize `file://` URIs so paths with parentheses return diagnostics without stalling.
+- Re-sync context files after project load and cancel `openFile` waits on abort.
+- Evict pooled servers on config change, keep warming servers alive past `initTimeoutMs`, and guard concurrent dead-client recovery.
+- Limit `session_start` warmup to the workspace's primary language inside `cwd`.
+
 ## [0.2.1] - 2026-10-31
 
 ### Changed

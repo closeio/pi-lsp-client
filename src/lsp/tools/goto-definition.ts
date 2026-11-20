@@ -1,5 +1,5 @@
-import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 import { withLspClient } from "../client-wrapper.js";
 import { formatLocation } from "../formatters.js";
@@ -32,7 +32,7 @@ export const lsp_goto_definition = defineTool({
 		try {
 			const result = await withLspClient<Location | LocationLink | Array<Location | LocationLink> | null>(
 				params.filePath,
-				async (client) => client.definition(params.filePath, params.line, params.character),
+				async (client) => client.definition(params.filePath, params.line, params.character, signal),
 				"definition",
 				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);
