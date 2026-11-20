@@ -1,4 +1,5 @@
-import { delimiter } from "node:path";
+import { delimiter, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	createMessageConnection,
 	type MessageConnection,
@@ -12,6 +13,16 @@ import { type SpawnedProcess, spawnProcess } from "./process.js";
 import { getAdditionalPathBases } from "./server-installation.js";
 import type { Diagnostic, ResolvedServer } from "./types.js";
 
+export function normalizeUriKey(uri: string): string {
+	if (uri.startsWith("file://")) {
+		try {
+			return resolve(fileURLToPath(uri));
+		} catch {
+			return uri;
+		}
+	}
+	return uri;
+}
 type ProgressToken = string | number;
 
 interface ProgressNotification {
@@ -88,8 +99,9 @@ export class LspClientTransport {
 			"textDocument/publishDiagnostics",
 			(params: { uri?: string; diagnostics?: Diagnostic[] }) => {
 				if (params.uri) {
-					this.diagnosticsStore.set(params.uri, params.diagnostics ?? []);
-					this.diagnosticsReceivedUris.add(params.uri);
+					const key = normalizeUriKey(params.uri);
+					this.diagnosticsStore.set(key, params.diagnostics ?? []);
+					this.diagnosticsReceivedUris.add(key);
 					this.notifyProgressListeners();
 				}
 			},
@@ -419,7 +431,13 @@ export class LspClientTransport {
 		this.notifyProgressListeners();
 	}
 
+	protected hasReceivedDiagnostics(uri: string): boolean {
+		const key = normalizeUriKey(uri);
+		return this.diagnosticsReceivedUris.has(key) || this.diagnosticsReceivedUris.has(uri);
+	}
+
 	getStoredDiagnostics(uri: string): Diagnostic[] {
-		return this.diagnosticsStore.get(uri) ?? [];
+		const key = normalizeUriKey(uri);
+		return this.diagnosticsStore.get(key) ?? this.diagnosticsStore.get(uri) ?? [];
 	}
 }

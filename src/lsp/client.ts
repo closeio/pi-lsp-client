@@ -110,7 +110,7 @@ export class LspClient extends LspClientConnection {
 			this.projectReadyPromise = (async () => {
 				await this.openFile(absPath, { skipDelay: true });
 				await this.waitForProgressCondition(
-					() => this.hasSeenProgress || this.diagnosticsReceivedUris.has(uri) || !this.isAlive(),
+					() => this.hasSeenProgress || this.hasReceivedDiagnostics(uri) || !this.isAlive(),
 					PROJECT_LOAD_GRACE_MS,
 					undefined,
 					{ background: isBackground },
