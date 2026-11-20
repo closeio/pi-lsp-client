@@ -1,5 +1,6 @@
-import { StringEnum, Type } from "@earendil-works/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 import { withLspClient } from "../client-wrapper.js";
 import { DEFAULT_MAX_SYMBOLS } from "../constants.js";
@@ -10,9 +11,11 @@ import { handleMissingDependencyError } from "../utils.js";
 
 const Params = Type.Object({
 	filePath: Type.String({ description: "File path used as LSP context" }),
-	scope: StringEnum(["document", "workspace"] as const, {
-		description: "'document' for file symbols, 'workspace' for project-wide search",
-	}),
+	scope: Type.Unsafe<"document" | "workspace">(
+		StringEnum(["document", "workspace"] as const, {
+			description: "'document' for file symbols, 'workspace' for project-wide search",
+		}),
+	),
 	query: Type.Optional(Type.String({ description: "Symbol name to search (required for workspace scope)" })),
 	limit: Type.Optional(Type.Number({ description: "Max results (default: 200)" })),
 });
@@ -40,7 +43,7 @@ export const lsp_symbols = defineTool({
 		"Use scope='document' for a file outline, scope='workspace' for project-wide symbol search.",
 	parameters: Params,
 	async execute(_toolCallId, params, signal, onUpdate, ctx) {
-		const scope = params.scope as "document" | "workspace";
+		const scope = params.scope;
 		const manager = getManagerForSession(ctx.sessionManager);
 		try {
 			if (scope === "workspace") {
