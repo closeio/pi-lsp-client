@@ -40,9 +40,10 @@ Conventions for human contributors and AI agents working on this repository.
   synchronously on `process.on("exit")`. Use `disposeSharedManager()` in tests.
 - `lsp_rename` runs with `executionMode: "sequential"` because it mutates
   files via a workspace edit spanning arbitrary paths.
-- No raw `SIGINT`/`SIGTERM` handlers. Cleanup happens via
-  `pi.on("session_shutdown")` plus an idempotent `process.once("exit")`
-  fallback that returns a disposer.
+- No raw `SIGINT`/`SIGTERM` handlers. `pi.on("session_shutdown")` clears UI
+  state and unregisters the session; idle servers are reaped after
+  `IDLE_TIMEOUT_MS` and killed synchronously via a `process.on("exit")`
+  `killSync` handler with a disposer.
 - TUI rendering reads from typed `details` returned by tool `execute`.
   Renderers never parse formatter strings to recover details.
 - Server installation is auditable: `/lsp install <id>` runs documented

@@ -4,14 +4,40 @@ import { getServerReadiness } from "./readiness.js";
 import type { ResolvedServer } from "./types.js";
 import { awaitWithSignal } from "./utils.js";
 
+function canonicalJson(value: unknown): string {
+	if (value === null || typeof value !== "object") {
+		return JSON.stringify(value);
+	}
+	if (Array.isArray(value)) {
+		return `[${value.map(canonicalJson).join(",")}]`;
+	}
+	const entries = Object.entries(value as Record<string, unknown>)
+		.filter(([, v]) => v !== undefined)
+		.sort(([a], [b]) => a.localeCompare(b));
+	return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+}
+
+function serverConfigFingerprint(server: ResolvedServer): string {
+	return canonicalJson({
+		command: server.command,
+		env: server.env,
+		initialization: server.initialization,
+		requestTimeoutMs: server.requestTimeoutMs,
+		initTimeoutMs: server.initTimeoutMs,
+	});
+}
+
 interface ManagedClient {
 	client: LspClient;
+	configFingerprint: string;
 	refCount: number;
 	pendingWaiters: number;
 	lastUsedAt: number;
 	initPromise: Promise<void> | null;
 	isInitializing: boolean;
 	initializingSince: number | null;
+	/** In-flight background project load triggered by warmupClient; tracked separately from initialize(). */
+	projectLoadPromise: Promise<void> | null;
 	/** Effective init timeout for this specific client: server.initTimeoutMs ?? manager default. */
 	initTimeoutMs: number;
 }
@@ -109,6 +135,7 @@ export class LspManager {
 
 			if (
 				!managed.isInitializing &&
+				managed.projectLoadPromise === null &&
 				managed.refCount === 0 &&
 				managed.pendingWaiters === 0 &&
 				t - managed.lastUsedAt > this.idleTimeoutMs
@@ -124,6 +151,7 @@ export class LspManager {
 			managed.refCount === 0 &&
 			managed.pendingWaiters === 0 &&
 			!managed.isInitializing &&
+			managed.projectLoadPromise === null &&
 			this.clients.get(key) === managed
 		) {
 			this.clients.delete(key);
@@ -138,7 +166,16 @@ export class LspManager {
 		signal?.throwIfAborted();
 
 		const key = this.getKey(root, server.id);
+		const configFingerprint = serverConfigFingerprint(server);
 		let managed = this.clients.get(key);
+
+		if (managed && managed.configFingerprint !== configFingerprint) {
+			if (this.clients.get(key) === managed) {
+				this.clients.delete(key);
+			}
+			await managed.client.stop().catch(() => {});
+			managed = undefined;
+		}
 
 		if (managed) {
 			const t = this.now();
@@ -147,8 +184,10 @@ export class LspManager {
 				managed.initializingSince !== null &&
 				t - managed.initializingSince > managed.initTimeoutMs
 			) {
+				if (this.clients.get(key) === managed) {
+					this.clients.delete(key);
+				}
 				await managed.client.stop().catch(() => {});
-				this.clients.delete(key);
 				managed = undefined;
 			}
 		}
@@ -175,8 +214,10 @@ export class LspManager {
 			}
 
 			if (!managed.client.isAlive()) {
+				if (this.clients.get(key) === managed) {
+					this.clients.delete(key);
+				}
 				await managed.client.stop().catch(() => {});
-				this.clients.delete(key);
 				return this.getClient(root, server, signal);
 			}
 
@@ -194,12 +235,14 @@ export class LspManager {
 
 		const newManaged: ManagedClient = {
 			client,
+			configFingerprint,
 			refCount: 0,
 			pendingWaiters: 1,
 			lastUsedAt: initStartedAt,
 			initPromise,
 			isInitializing: true,
 			initializingSince: initStartedAt,
+			projectLoadPromise: null,
 			initTimeoutMs: server.initTimeoutMs ?? this.initTimeoutMs,
 		};
 		this.clients.set(key, newManaged);
@@ -251,26 +294,31 @@ export class LspManager {
 	warmupClient(root: string, server: ResolvedServer, seedFilePath?: string): void {
 		if (this.disposed) return;
 		const key = this.getKey(root, server.id);
-		if (this.clients.has(key)) return;
+		const configFingerprint = serverConfigFingerprint(server);
+		const existing = this.clients.get(key);
+		if (existing) {
+			if (existing.configFingerprint === configFingerprint) return;
+			this.clients.delete(key);
+			existing.client.stop().catch(() => {});
+		}
 
 		const client = this.clientFactory(root, server);
 		const initStartedAt = this.now();
 		const initPromise = (async () => {
 			await client.start();
 			await client.initialize();
-			if (seedFilePath && getServerReadiness(server.id)?.waitForProjectProgress) {
-				await client.waitForProjectReady(seedFilePath, undefined, { background: true });
-			}
 		})();
 
 		const managed: ManagedClient = {
 			client,
+			configFingerprint,
 			refCount: 0,
 			pendingWaiters: 0,
 			lastUsedAt: initStartedAt,
 			initPromise,
 			isInitializing: true,
 			initializingSince: initStartedAt,
+			projectLoadPromise: null,
 			initTimeoutMs: server.initTimeoutMs ?? this.initTimeoutMs,
 		};
 		this.clients.set(key, managed);
@@ -281,6 +329,24 @@ export class LspManager {
 				managed.initializingSince = null;
 				managed.initPromise = null;
 				managed.lastUsedAt = this.now();
+
+				if (
+					seedFilePath &&
+					!this.disposed &&
+					this.clients.get(key) === managed &&
+					getServerReadiness(server.id)?.waitForProjectProgress
+				) {
+					const loadPromise = client
+						.waitForProjectReady(seedFilePath, undefined, { background: true })
+						.catch(() => {})
+						.finally(() => {
+							if (managed.projectLoadPromise === loadPromise) {
+								managed.projectLoadPromise = null;
+								managed.lastUsedAt = this.now();
+							}
+						});
+					managed.projectLoadPromise = loadPromise;
+				}
 			},
 			() => {
 				if (this.clients.get(key) === managed) {

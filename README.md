@@ -219,7 +219,7 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
 | `rust-analyzer` exited while loading `rust-src` | Run `rustup component remove rust-src` and `rustup component add rust-src` for the active toolchain, then retry the LSP tool or `/lsp warmup rust`. |
 | `lsp_rename` did not retry after a server crash | This is by design. Mutating tools never auto-retry to avoid double-applying edits. Re-issue the rename manually. |
 | Footer status stuck after `/reload` | File a bug. The `session_shutdown` handler clears `pi-lsp` status/widget keys. If they persist, the cleanup boundary was bypassed. |
-| Stale LSP child after `/reload` | Run `/lsp` to inspect the current snapshot. If `getSnapshot()` is empty but a child process is still alive, file a bug. `stopAll()` should have killed it. |
+| Stale LSP child after `/reload` | Warm servers are intentionally shared across `/reload` and replaced automatically if their config in `.pi/lsp-client.json` changes. Run `/lsp` to inspect the active pool; idle servers are reaped after 5 minutes and killed on process exit. |
 
 ## Development
 
