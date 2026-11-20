@@ -11,40 +11,75 @@ import { LspManager } from "./manager.js";
 export type SessionKey = object;
 
 /**
- * Session-scoped LspManager registry.
- *
- * Each pi session gets its own LspManager - and therefore its own pool of
- * LSP server subprocesses - keyed by reference identity of the session's
- * `sessionManager`. Concurrent sub-agent sessions in the same Node process
- * do not share clients, so one session's shutdown can never dispose
- * servers that another session is still using.
- *
- * Lifetime contract:
- *   - `getManagerForSession` is lazy: the manager is created on first use.
- *   - `disposeManagerForSession` is called from `session_shutdown` and is
- *     idempotent. It is the ONLY caller-initiated disposal path.
- *   - The WeakMap is keyed by `sessionManager` so a forgotten session can
- *     still be GC'd cleanly; the per-manager `process.on("exit")` hook
- *     remains the belt-and-suspenders for crashes / SIGKILL'd parents.
+ * Process-wide symbol key for the shared LSP pool. Using `globalThis` +
+ * `Symbol.for` lets concurrent and sequential pi sessions share warm language
+ * servers even when pi reloads the extension module per session with
+ * `moduleCache: false`.
  */
-const _registry = new WeakMap<SessionKey, LspManager>();
+export const SHARED_POOL_SYMBOL = Symbol.for("pi-lsp-client.shared-pool.v1");
 
-export function getManagerForSession(sessionKey: SessionKey): LspManager {
-	let m = _registry.get(sessionKey);
-	if (!m) {
-		m = new LspManager();
-		_registry.set(sessionKey, m);
-	}
-	return m;
+interface SharedLspPool {
+	manager: LspManager;
+	sessions: WeakSet<SessionKey>;
 }
 
+type GlobalWithLspPool = typeof globalThis & {
+	[SHARED_POOL_SYMBOL]?: SharedLspPool;
+};
+
+function getGlobalStore(): GlobalWithLspPool {
+	return globalThis as GlobalWithLspPool;
+}
+
+function getOrCreatePool(): SharedLspPool {
+	const store = getGlobalStore();
+	let pool = store[SHARED_POOL_SYMBOL];
+	if (!pool) {
+		pool = {
+			manager: new LspManager(),
+			sessions: new WeakSet<SessionKey>(),
+		};
+		store[SHARED_POOL_SYMBOL] = pool;
+	}
+	return pool;
+}
+
+/**
+ * Return the process-wide shared LspManager and register `sessionKey` as a
+ * participant. Sessions share pooled clients keyed by `(root, serverId)` with
+ * per-call refCount accounting; idle clients are reaped after `IDLE_TIMEOUT_MS`
+ * and killed synchronously on `process.on("exit")`.
+ */
+export function getManagerForSession(sessionKey: SessionKey): LspManager {
+	const pool = getOrCreatePool();
+	pool.sessions.add(sessionKey);
+	return pool.manager;
+}
+
+/**
+ * Unregister a session on `session_shutdown`. Intentionally leaves warm shared
+ * servers alive so concurrent sessions and subsequent phases in the same Node
+ * process reuse them instead of paying cold start again.
+ */
 export async function disposeManagerForSession(sessionKey: SessionKey): Promise<void> {
-	const m = _registry.get(sessionKey);
-	if (!m) return;
-	_registry.delete(sessionKey);
-	await m.stopAll();
+	const pool = getGlobalStore()[SHARED_POOL_SYMBOL];
+	if (!pool) return;
+	pool.sessions.delete(sessionKey);
 }
 
 export function hasManagerForSession(sessionKey: SessionKey): boolean {
-	return _registry.has(sessionKey);
+	const pool = getGlobalStore()[SHARED_POOL_SYMBOL];
+	return pool?.sessions.has(sessionKey) ?? false;
+}
+
+/**
+ * Stop all servers in the process-wide shared pool and clear the `globalThis`
+ * slot. Intended for tests and explicit full teardown.
+ */
+export async function disposeSharedManager(): Promise<void> {
+	const store = getGlobalStore();
+	const pool = store[SHARED_POOL_SYMBOL];
+	if (!pool) return;
+	delete store[SHARED_POOL_SYMBOL];
+	await pool.manager.stopAll();
 }

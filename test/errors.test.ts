@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
 	isLspDeadConnectionError,
+	isLspProcessExitedError,
+	isLspRequestTimeoutError,
 	LspConnectionClosedError,
 	LspInvalidPathError,
 	LspProcessExitedError,
@@ -77,6 +79,22 @@ describe("isLspDeadConnectionError", () => {
 		expect(isLspDeadConnectionError(new Error("nope"))).toBe(false);
 		expect(isLspDeadConnectionError("string")).toBe(false);
 		expect(isLspDeadConnectionError(null)).toBe(false);
+	});
+
+	it("#given errors constructed by another module instance with matching name #when classifying #then matches across module boundaries", () => {
+		// given
+		const closed = new Error("closed");
+		closed.name = "LspConnectionClosedError";
+		const exited = new Error("exited");
+		exited.name = "LspProcessExitedError";
+		const timeout = new Error("timeout");
+		timeout.name = "LspRequestTimeoutError";
+
+		// when / then
+		expect(isLspDeadConnectionError(closed)).toBe(true);
+		expect(isLspDeadConnectionError(exited)).toBe(true);
+		expect(isLspProcessExitedError(exited)).toBe(true);
+		expect(isLspRequestTimeoutError(timeout)).toBe(true);
 	});
 });
 
