@@ -6,6 +6,7 @@ import { EXT_TO_LANG } from "./language-mappings.js";
 const SKIP_DIRECTORIES = new Set(["node_modules", "dist", "build", "out", "venv", "__pycache__", "target", "vendor"]);
 const MAX_SCAN_ENTRIES = 500;
 const CONFIG_FILE_PATTERN = /\.config\.[^.]+$/i;
+const DATA_DOC_EXTENSIONS = new Set([".json", ".jsonc", ".yaml", ".yml", ".toml", ".xml", ".md", ".markdown"]);
 
 function shouldSkipDirectory(entry: string): boolean {
 	return entry.startsWith(".") || SKIP_DIRECTORIES.has(entry);
@@ -79,6 +80,15 @@ export function inferSeedFilesByFrequency(directory: string): DirectorySeed[] {
 
 export function inferSeedFileFromDirectory(directory: string): DirectorySeed | null {
 	return inferSeedFilesByFrequency(directory)[0] ?? null;
+}
+
+/**
+ * Return the workspace's primary language seed file, preferring code files over
+ * data/documentation files (`.json`, `.yaml`, `.md`, etc.) when present.
+ */
+export function inferPrimarySeedFile(directory: string): DirectorySeed | null {
+	const seeds = inferSeedFilesByFrequency(directory);
+	return seeds.find((s) => !DATA_DOC_EXTENSIONS.has(s.extension)) ?? seeds[0] ?? null;
 }
 
 export function inferExtensionFromDirectory(directory: string): string | null {

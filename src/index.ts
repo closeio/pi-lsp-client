@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-
 
 import { findWorkspaceRoot } from "./lsp/client-wrapper.js";
 import { getMergedServers, isSessionStartWarmupEnabled } from "./lsp/config-loader.js";
-import { findFirstFileWithExtensions, inferSeedFilesByFrequency } from "./lsp/infer-extension.js";
+import { findFirstFileWithExtensions, inferPrimarySeedFile } from "./lsp/infer-extension.js";
 import { LspInspectorComponent } from "./lsp/inspector.js";
 import type { LspManager } from "./lsp/manager.js";
 import { disposeManagerForSession, getManagerForSession } from "./lsp/manager-registry.js";
@@ -313,12 +313,9 @@ function runWarmup(id: string, ctx: ExtensionContext): void {
 	}
 }
 
-const DATA_DOC_EXTENSIONS = new Set([".json", ".jsonc", ".yaml", ".yml", ".toml", ".xml", ".md", ".markdown"]);
-
 function warmupWorkspace(cwd: string, manager: LspManager): void {
 	try {
-		const seeds = inferSeedFilesByFrequency(cwd);
-		const primary = seeds.find((s) => !DATA_DOC_EXTENSIONS.has(s.extension)) ?? seeds[0];
+		const primary = inferPrimarySeedFile(cwd);
 		if (!primary) return;
 		const lookup = findServerForExtension(primary.extension);
 		if (lookup.status !== "found") return;
