@@ -2,6 +2,8 @@ export const DEFAULT_MAX_REFERENCES = 200;
 export const DEFAULT_MAX_SYMBOLS = 200;
 export const DEFAULT_MAX_DIAGNOSTICS = 200;
 export const DEFAULT_MAX_DIRECTORY_FILES = 50;
+export const DEFAULT_MAX_DEFINITION_LINES = 50;
+export const DEFAULT_FALLBACK_DEFINITION_LINES = 20;
 
 // Default timeouts — override per-server via `.pi/lsp-client.json` or
 // `~/.pi/lsp-client.json` (`requestTimeoutMs` / `initTimeoutMs` fields), since

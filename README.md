@@ -76,7 +76,7 @@ Errors, warnings, and hints from the language server BEFORE running build. Works
 
 ### `lsp_goto_definition`
 
-Jump to the definition of a symbol by name (`symbol`, optional `filePath`) or by position (`filePath`, `line`, `character`). Includes the source line at each result.
+Jump to the definition of a symbol by name (`symbol`, optional `filePath`) or by position (`filePath`, `line`, `character`). Returns the capped definition body (up to 50 lines) at each result.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|

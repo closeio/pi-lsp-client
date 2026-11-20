@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_FALLBACK_DEFINITION_LINES, DEFAULT_MAX_DEFINITION_LINES } from "./constants.js";
 
 import { SEVERITY_MAP, SYMBOL_KIND_MAP } from "./language-mappings.js";
 import type {
@@ -36,8 +37,7 @@ export function formatLocation(loc: Location | LocationLink): string {
 	return `${uri}:${line}:${char}`;
 }
 
-export function readSourceLine(filePath: string, zeroBasedLine: number, cache?: SourceLineCache): string | null {
-	if (zeroBasedLine < 0) return null;
+function readCachedFileLines(filePath: string, cache?: SourceLineCache): string[] | null {
 	let lines: string[] | null | undefined = cache?.get(filePath);
 	if (lines === undefined) {
 		try {
@@ -47,13 +47,23 @@ export function readSourceLine(filePath: string, zeroBasedLine: number, cache?: 
 		}
 		cache?.set(filePath, lines);
 	}
+	return lines;
+}
+
+function capLineLength(line: string): string {
+	if (line.length > MAX_SOURCE_LINE_CHARS) {
+		return `${line.slice(0, MAX_SOURCE_LINE_CHARS - 1)}…`;
+	}
+	return line;
+}
+
+export function readSourceLine(filePath: string, zeroBasedLine: number, cache?: SourceLineCache): string | null {
+	if (zeroBasedLine < 0) return null;
+	const lines = readCachedFileLines(filePath, cache);
 	if (!lines || zeroBasedLine >= lines.length) return null;
 	const trimmed = lines[zeroBasedLine]?.trim() ?? "";
 	if (trimmed.length === 0) return null;
-	if (trimmed.length > MAX_SOURCE_LINE_CHARS) {
-		return `${trimmed.slice(0, MAX_SOURCE_LINE_CHARS - 1)}…`;
-	}
-	return trimmed;
+	return capLineLength(trimmed);
 }
 
 export function formatLocationWithSource(loc: Location | LocationLink, cache?: SourceLineCache): string {
@@ -62,6 +72,83 @@ export function formatLocationWithSource(loc: Location | LocationLink, cache?: S
 	const zeroBasedLine = "targetRange" in loc ? loc.targetRange.start.line : loc.range.start.line;
 	const sourceLine = readSourceLine(filePath, zeroBasedLine, cache);
 	return sourceLine ? `${base}  ${sourceLine}` : base;
+}
+
+/**
+ * Find the innermost hierarchical `DocumentSymbol.range` covering `zeroBasedLine`,
+ * preferring a symbol whose `selectionRange` starts on that exact line.
+ */
+export function findEnclosingSymbolRange(
+	symbols: readonly (DocumentSymbol | SymbolInfo)[],
+	zeroBasedLine: number,
+): Range | null {
+	let bestExact: Range | null = null;
+	let bestExactSpan = Number.POSITIVE_INFINITY;
+	let bestContaining: Range | null = null;
+	let bestContainingSpan = Number.POSITIVE_INFINITY;
+
+	const visit = (items: readonly (DocumentSymbol | SymbolInfo)[]): void => {
+		for (const item of items) {
+			if (!("selectionRange" in item)) continue;
+			const { range, selectionRange } = item;
+			if (range.start.line <= zeroBasedLine && zeroBasedLine <= range.end.line) {
+				const span = range.end.line - range.start.line;
+				if (selectionRange.start.line === zeroBasedLine && span <= bestExactSpan) {
+					bestExact = range;
+					bestExactSpan = span;
+				} else if (span <= bestContainingSpan) {
+					bestContaining = range;
+					bestContainingSpan = span;
+				}
+				if (item.children && item.children.length > 0) {
+					visit(item.children);
+				}
+			}
+		}
+	};
+
+	visit(symbols);
+	return bestExact ?? bestContaining;
+}
+
+export function formatDefinitionWithBody(
+	loc: Location | LocationLink,
+	bodyRange: Range | null,
+	cache?: SourceLineCache,
+	maxLines = DEFAULT_MAX_DEFINITION_LINES,
+): string {
+	const base = formatLocation(loc);
+	const filePath = uriToPath("targetUri" in loc ? loc.targetUri : loc.uri);
+	const locRange = "targetRange" in loc ? loc.targetRange : loc.range;
+	const lines = readCachedFileLines(filePath, cache);
+	if (!lines || locRange.start.line < 0 || locRange.start.line >= lines.length) {
+		return base;
+	}
+
+	const startLine = bodyRange ? Math.max(0, bodyRange.start.line) : locRange.start.line;
+	const rawEndLine = bodyRange
+		? Math.min(lines.length - 1, Math.max(startLine, bodyRange.end.line))
+		: Math.min(lines.length - 1, startLine + DEFAULT_FALLBACK_DEFINITION_LINES - 1);
+
+	// Single-line declarations stay compact on one line
+	if (startLine === rawEndLine) {
+		const trimmed = lines[startLine]?.trim() ?? "";
+		return trimmed.length > 0 ? `${base}  ${capLineLength(trimmed)}` : base;
+	}
+
+	const totalLines = rawEndLine - startLine + 1;
+	const cappedEndLine = Math.min(rawEndLine, startLine + maxLines - 1);
+	const lineNumWidth = String(cappedEndLine + 1).length;
+	const out: string[] = [base];
+	for (let i = startLine; i <= cappedEndLine; i++) {
+		const lineNo = String(i + 1).padStart(lineNumWidth, " ");
+		out.push(`  ${lineNo} | ${capLineLength(lines[i] ?? "")}`);
+	}
+	if (cappedEndLine < rawEndLine) {
+		const remaining = totalLines - (cappedEndLine - startLine + 1);
+		out.push(`  ... (${remaining} more lines; read from line ${cappedEndLine + 2})`);
+	}
+	return out.join("\n");
 }
 
 export function formatSymbolKind(kind: number): string {

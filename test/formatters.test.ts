@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 
 import {
 	filterDiagnosticsBySeverity,
+	findEnclosingSymbolRange,
 	formatApplyResult,
+	formatDefinitionWithBody,
 	formatDiagnostic,
 	formatDocumentSymbol,
 	formatLocation,
@@ -112,6 +114,112 @@ describe("formatLocationWithSource", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("formatDefinitionWithBody", () => {
+	it("#given a multi-line bodyRange within cap #when formatting #then prints numbered body lines", () => {
+		// given
+		const dir = mkdtempSync(join(tmpdir(), "pi-lsp-def-body-"));
+		try {
+			const filePath = join(dir, "fn.ts");
+			writeFileSync(
+				filePath,
+				"const header = 0;\nexport function greet(name: string) {\n  return 'hi ' + name;\n}\n",
+			);
+			const loc = {
+				uri: pathToFileURL(filePath).href,
+				range: { start: { line: 1, character: 16 }, end: { line: 1, character: 21 } },
+			};
+			const bodyRange = { start: { line: 1, character: 0 }, end: { line: 3, character: 1 } };
+
+			// when
+			const formatted = formatDefinitionWithBody(loc, bodyRange, new Map(), 50);
+
+			// then
+			expect(formatted).toBe(
+				[
+					`${filePath}:2:16`,
+					"  2 | export function greet(name: string) {",
+					"  3 |   return 'hi ' + name;",
+					"  4 | }",
+				].join("\n"),
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("#given a bodyRange exceeding maxLines #when formatting #then caps lines and appends read offset hint", () => {
+		// given
+		const dir = mkdtempSync(join(tmpdir(), "pi-lsp-def-cap-"));
+		try {
+			const filePath = join(dir, "big.ts");
+			const lines = Array.from({ length: 12 }, (_, i) => `  line_${i + 1}();`);
+			writeFileSync(filePath, lines.join("\n"));
+			const loc = {
+				uri: pathToFileURL(filePath).href,
+				range: { start: { line: 0, character: 2 }, end: { line: 0, character: 8 } },
+			};
+			const bodyRange = { start: { line: 0, character: 0 }, end: { line: 11, character: 0 } };
+
+			// when
+			const formatted = formatDefinitionWithBody(loc, bodyRange, new Map(), 4);
+
+			// then
+			expect(formatted).toContain("  1 |   line_1();");
+			expect(formatted).toContain("  4 |   line_4();");
+			expect(formatted).not.toContain("line_5()");
+			expect(formatted).toContain("... (8 more lines; read from line 5)");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("#given a single-line declaration bodyRange #when formatting #then stays compact on one line", () => {
+		// given
+		const dir = mkdtempSync(join(tmpdir(), "pi-lsp-def-one-"));
+		try {
+			const filePath = join(dir, "const.ts");
+			writeFileSync(filePath, "export const MAX = 50;\nexport const OTHER = 100;\n");
+			const loc = {
+				uri: pathToFileURL(filePath).href,
+				range: { start: { line: 0, character: 13 }, end: { line: 0, character: 16 } },
+			};
+			const bodyRange = { start: { line: 0, character: 0 }, end: { line: 0, character: 22 } };
+
+			// when
+			const formatted = formatDefinitionWithBody(loc, bodyRange, new Map(), 50);
+
+			// then
+			expect(formatted).toBe(`${filePath}:1:13  export const MAX = 50;`);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("#given nested DocumentSymbols #when finding enclosing range #then selects the innermost matching symbol", () => {
+		const range = findEnclosingSymbolRange(
+			[
+				{
+					name: "LspManager",
+					kind: 5,
+					range: { start: { line: 10, character: 0 }, end: { line: 100, character: 1 } },
+					selectionRange: { start: { line: 10, character: 6 }, end: { line: 10, character: 16 } },
+					children: [
+						{
+							name: "getClient",
+							kind: 6,
+							range: { start: { line: 25, character: 2 }, end: { line: 40, character: 3 } },
+							selectionRange: { start: { line: 25, character: 2 }, end: { line: 25, character: 11 } },
+						},
+					],
+				},
+			],
+			25,
+		);
+
+		expect(range).toEqual({ start: { line: 25, character: 2 }, end: { line: 40, character: 3 } });
 	});
 });
 

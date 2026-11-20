@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Opt-in background warmup on `session_start` for the workspace's primary language server, enabled with `"warmup": true` in `.pi/lsp-client.json` or `PI_LSP_CLIENT_WARMUP=1`.
 - `lsp_find_references` and `lsp_goto_definition` include the source line for each location.
 - `lsp_find_references` and `lsp_goto_definition` accept `symbol` (with optional `filePath`) for single-call lookup without a prior `grep` for the position.
+- `lsp_goto_definition` returns the definition body (up to 50 lines) instead of only its first line.
 
 ### Fixed
 
