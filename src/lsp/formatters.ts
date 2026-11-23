@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { SEVERITY_MAP, SYMBOL_KIND_MAP } from "./language-mappings.js";
@@ -14,6 +15,9 @@ import type {
 } from "./types.js";
 import type { ApplyResult } from "./workspace-edit.js";
 
+const MAX_SOURCE_LINE_CHARS = 200;
+
+export type SourceLineCache = Map<string, string[] | null>;
 export function uriToPath(uri: string): string {
 	return fileURLToPath(uri);
 }
@@ -30,6 +34,34 @@ export function formatLocation(loc: Location | LocationLink): string {
 	const line = loc.range.start.line + 1;
 	const char = loc.range.start.character;
 	return `${uri}:${line}:${char}`;
+}
+
+export function readSourceLine(filePath: string, zeroBasedLine: number, cache?: SourceLineCache): string | null {
+	if (zeroBasedLine < 0) return null;
+	let lines: string[] | null | undefined = cache?.get(filePath);
+	if (lines === undefined) {
+		try {
+			lines = readFileSync(filePath, "utf-8").split(/\r?\n/);
+		} catch {
+			lines = null;
+		}
+		cache?.set(filePath, lines);
+	}
+	if (!lines || zeroBasedLine >= lines.length) return null;
+	const trimmed = lines[zeroBasedLine]?.trim() ?? "";
+	if (trimmed.length === 0) return null;
+	if (trimmed.length > MAX_SOURCE_LINE_CHARS) {
+		return `${trimmed.slice(0, MAX_SOURCE_LINE_CHARS - 1)}…`;
+	}
+	return trimmed;
+}
+
+export function formatLocationWithSource(loc: Location | LocationLink, cache?: SourceLineCache): string {
+	const base = formatLocation(loc);
+	const filePath = uriToPath("targetUri" in loc ? loc.targetUri : loc.uri);
+	const zeroBasedLine = "targetRange" in loc ? loc.targetRange.start.line : loc.range.start.line;
+	const sourceLine = readSourceLine(filePath, zeroBasedLine, cache);
+	return sourceLine ? `${base}  ${sourceLine}` : base;
 }
 
 export function formatSymbolKind(kind: number): string {

@@ -3,7 +3,7 @@ import { Type } from "typebox";
 
 import { withLspClient } from "../client-wrapper.js";
 import { DEFAULT_MAX_REFERENCES } from "../constants.js";
-import { formatLocation } from "../formatters.js";
+import { formatLocationWithSource, type SourceLineCache } from "../formatters.js";
 import { getManagerForSession } from "../manager-registry.js";
 import type { Location } from "../types.js";
 import { handleMissingDependencyError } from "../utils.js";
@@ -69,7 +69,8 @@ export const lsp_find_references = defineTool({
 				};
 			}
 
-			const lines = limited.map(formatLocation);
+			const lineCache: SourceLineCache = new Map();
+			const lines = limited.map((loc) => formatLocationWithSource(loc, lineCache));
 			if (truncated) {
 				lines.unshift(`Found ${total} references (showing first ${DEFAULT_MAX_REFERENCES}):`);
 			}

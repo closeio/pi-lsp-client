@@ -2,7 +2,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import { withLspClient } from "../client-wrapper.js";
-import { formatLocation } from "../formatters.js";
+import { formatLocationWithSource, type SourceLineCache } from "../formatters.js";
 import { getManagerForSession } from "../manager-registry.js";
 import type { Location, LocationLink } from "../types.js";
 import { handleMissingDependencyError } from "../utils.js";
@@ -53,7 +53,8 @@ export const lsp_goto_definition = defineTool({
 				};
 			}
 
-			const text = locations.map(formatLocation).join("\n");
+			const lineCache: SourceLineCache = new Map();
+			const text = locations.map((loc) => formatLocationWithSource(loc, lineCache)).join("\n");
 			return {
 				content: [{ type: "text", text }],
 				details: {
