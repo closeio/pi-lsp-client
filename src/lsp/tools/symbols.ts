@@ -41,6 +41,10 @@ export const lsp_symbols = defineTool({
 	description:
 		"Get symbols from a file (document) or search across the workspace. " +
 		"Use scope='document' for a file outline, scope='workspace' for project-wide symbol search.",
+	promptSnippet: "List symbols in a file (document) or search symbols across the workspace",
+	promptGuidelines: [
+		"Use lsp_symbols with scope='document' for a file outline or scope='workspace' to find symbols by name.",
+	],
 	parameters: Params,
 	async execute(_toolCallId, params, signal, onUpdate, ctx) {
 		const scope = params.scope;

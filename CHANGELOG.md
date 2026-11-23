@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI and the development docs use Bun 1.4.4 (was 1.4.2).
 - Support for `pi>1.1.0`. `pi` packages no longer export `TypeBox`. Now added
   as a peer dependency.
+- Added `promptSnippet` and `promptGuidelines` metadata to all six LSP tools so pi advertises them in the default system prompt.
 
 ## [0.2.1] - 2026-10-31
 
