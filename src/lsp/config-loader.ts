@@ -43,6 +43,7 @@ interface LspEntry {
 
 interface ConfigJson {
 	lsp?: Record<string, LspEntry>;
+	warmup?: boolean;
 }
 
 type ConfigSource = "project" | "user";
@@ -154,6 +155,20 @@ export function getMergedServers(): ServerWithSource[] {
 		}
 		return b.priority - a.priority;
 	});
+}
+
+/**
+ * Whether `session_start` should warm the workspace's primary language server.
+ * Off by default so sessions that never call an LSP tool don't spawn a server.
+ * Project config wins over user config.
+ */
+export function isSessionStartWarmupEnabled(): boolean {
+	const configs = loadAllConfigs();
+	for (const source of ["project", "user"] as const) {
+		const value = configs.get(source)?.warmup;
+		if (typeof value === "boolean") return value;
+	}
+	return false;
 }
 
 export function getDisabledServerIds(): Set<string> {

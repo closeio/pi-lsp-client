@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 
 import { findWorkspaceRoot } from "./lsp/client-wrapper.js";
-import { getMergedServers } from "./lsp/config-loader.js";
+import { getMergedServers, isSessionStartWarmupEnabled } from "./lsp/config-loader.js";
 import { findFirstFileWithExtensions, inferSeedFilesByFrequency } from "./lsp/infer-extension.js";
 import { LspInspectorComponent } from "./lsp/inspector.js";
 import type { LspManager } from "./lsp/manager.js";
@@ -147,7 +147,9 @@ export default function (pi: ExtensionAPI): void {
 	};
 
 	pi.on("session_start", async (_event, ctx) => {
-		warmupWorkspace(ctx.cwd, getManagerForSession(ctx.sessionManager));
+		if (isSessionStartWarmupEnabled()) {
+			warmupWorkspace(ctx.cwd, getManagerForSession(ctx.sessionManager));
+		}
 		updateStatus(ctx);
 	});
 

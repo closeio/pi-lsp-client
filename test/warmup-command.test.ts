@@ -53,6 +53,7 @@ beforeEach(() => {
 	vi.spyOn(process, "cwd").mockReturnValue(projectDir);
 	vi.stubEnv("HOME", homeDir);
 	vi.stubEnv("USERPROFILE", homeDir);
+	vi.stubEnv("PI_CODING_AGENT_DIR", join(homeDir, ".pi", "agent"));
 });
 
 afterEach(async () => {
@@ -178,6 +179,7 @@ describe("session_start background warmup", () => {
 		writeFileSync(
 			join(projectDir, ".pi", "lsp-client.json"),
 			JSON.stringify({
+				warmup: true,
 				lsp: { typescript: { command: ["node"], extensions: [".ts"] } },
 			}),
 		);
@@ -227,6 +229,7 @@ describe("session_start background warmup", () => {
 		writeFileSync(
 			join(projectDir, ".pi", "lsp-client.json"),
 			JSON.stringify({
+				warmup: true,
 				lsp: {
 					rust: { command: ["definitely-missing-rust-analyzer-bin"], extensions: [".rs"] },
 					typescript: { command: ["node"], extensions: [".ts"] },
@@ -269,6 +272,7 @@ describe("session_start background warmup", () => {
 		writeFileSync(
 			join(projectDir, ".pi", "lsp-client.json"),
 			JSON.stringify({
+				warmup: true,
 				lsp: { typescript: { command: ["node"], extensions: [".ts"] } },
 			}),
 		);
@@ -307,6 +311,7 @@ describe("session_start background warmup", () => {
 		writeFileSync(
 			join(projectDir, ".pi", "lsp-client.json"),
 			JSON.stringify({
+				warmup: true,
 				lsp: { typescript: { command: ["node"], extensions: [".ts"] } },
 			}),
 		);
@@ -342,4 +347,85 @@ describe("session_start background warmup", () => {
 		expect(calls[0]?.server.id).toBe("typescript");
 		expect(calls[0]?.seedFile).toBe(join(projectDir, "apps", "ui", "src", "app.ts"));
 	});
+
+	it("#given no warmup option in config #when session_start fires #then does not warm up", async () => {
+		// given
+		writeTypescriptProject();
+		writeFileSync(
+			join(projectDir, ".pi", "lsp-client.json"),
+			JSON.stringify({ lsp: { typescript: { command: ["node"], extensions: [".ts"] } } }),
+		);
+		const warmup = vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation(() => {});
+
+		// when
+		await fireSessionStart();
+
+		// then
+		expect(warmup).not.toHaveBeenCalled();
+	});
+
+	it("#given warmup true in user config and false in project config #when session_start fires #then project config wins", async () => {
+		// given
+		writeTypescriptProject();
+		writeFileSync(
+			join(projectDir, ".pi", "lsp-client.json"),
+			JSON.stringify({ warmup: false, lsp: { typescript: { command: ["node"], extensions: [".ts"] } } }),
+		);
+		const userConfigDir = join(sandbox, "home", ".pi", "agent");
+		mkdirSync(userConfigDir, { recursive: true });
+		writeFileSync(join(userConfigDir, "lsp-client.json"), JSON.stringify({ warmup: true }));
+		const warmup = vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation(() => {});
+
+		// when
+		await fireSessionStart();
+
+		// then
+		expect(warmup).not.toHaveBeenCalled();
+	});
+
+	it("#given warmup true only in user config #when session_start fires #then warms up", async () => {
+		// given
+		writeTypescriptProject();
+		writeFileSync(
+			join(projectDir, ".pi", "lsp-client.json"),
+			JSON.stringify({ lsp: { typescript: { command: ["node"], extensions: [".ts"] } } }),
+		);
+		const userConfigDir = join(sandbox, "home", ".pi", "agent");
+		mkdirSync(userConfigDir, { recursive: true });
+		writeFileSync(join(userConfigDir, "lsp-client.json"), JSON.stringify({ warmup: true }));
+		const warmup = vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation(() => {});
+
+		// when
+		await fireSessionStart();
+
+		// then
+		expect(warmup).toHaveBeenCalledTimes(1);
+	});
 });
+
+function writeTypescriptProject(): void {
+	mkdirSync(join(projectDir, "src"), { recursive: true });
+	writeFileSync(join(projectDir, "package.json"), "{}");
+	writeFileSync(join(projectDir, "src", "app.ts"), "export const x = 1;\n");
+}
+
+async function fireSessionStart(): Promise<void> {
+	let sessionStartHandler: ((event: unknown, ctx: unknown) => Promise<void>) | undefined;
+	const pi = {
+		registerTool: () => {},
+		registerCommand: () => {},
+		on: (event: string, handler: (event: unknown, ctx: unknown) => Promise<void>) => {
+			if (event === "session_start") sessionStartHandler = handler;
+		},
+	} as unknown as ExtensionAPI;
+	registerExtension(pi);
+	if (!sessionStartHandler) throw new Error("expected session_start handler");
+	await sessionStartHandler(
+		{ type: "session_start" },
+		{
+			cwd: projectDir,
+			sessionManager,
+			ui: { setStatus: () => {}, theme: { fg: (_c: string, s: string) => s } },
+		},
+	);
+}
