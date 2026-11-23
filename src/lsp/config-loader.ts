@@ -13,6 +13,7 @@ const PI_CONFIG_DIR_NAME = ".pi";
 const PI_AGENT_DIR_SUBDIR = "agent";
 const PI_ENV_AGENT_DIR = "PI_CODING_AGENT_DIR";
 const LSP_CONFIG_FILE_NAME = "lsp-client.json";
+const WARMUP_ENV = "PI_LSP_CLIENT_WARMUP";
 
 function expandTilde(path: string): string {
 	if (path === "~") return homedir();
@@ -43,6 +44,7 @@ interface LspEntry {
 
 interface ConfigJson {
 	lsp?: Record<string, LspEntry>;
+	warmup?: boolean;
 }
 
 type ConfigSource = "project" | "user";
@@ -154,6 +156,30 @@ export function getMergedServers(): ServerWithSource[] {
 		}
 		return b.priority - a.priority;
 	});
+}
+
+function parseWarmupEnv(value: string | undefined): boolean | undefined {
+	const normalized = value?.trim().toLowerCase();
+	if (normalized === "1" || normalized === "true") return true;
+	if (normalized === "0" || normalized === "false") return false;
+	return undefined;
+}
+
+/**
+ * Whether `session_start` should warm the workspace's primary language server.
+ * Off by default so sessions that never call an LSP tool don't spawn a server.
+ * `PI_LSP_CLIENT_WARMUP` wins over project config, which wins over user config.
+ */
+export function isSessionStartWarmupEnabled(): boolean {
+	const fromEnv = parseWarmupEnv(process.env[WARMUP_ENV]);
+	if (fromEnv !== undefined) return fromEnv;
+
+	const configs = loadAllConfigs();
+	for (const source of ["project", "user"] as const) {
+		const value = configs.get(source)?.warmup;
+		if (typeof value === "boolean") return value;
+	}
+	return false;
 }
 
 export function getDisabledServerIds(): Set<string> {
