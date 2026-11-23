@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -12,6 +12,8 @@ import {
 } from "vscode-jsonrpc/node";
 
 import { LspClient } from "../src/lsp/client.js";
+import { withLspClient } from "../src/lsp/client-wrapper.js";
+import { LspManager } from "../src/lsp/manager.js";
 import type { Diagnostic } from "../src/lsp/types.js";
 
 import { makeServer } from "./helpers/fake-lsp-client.js";
@@ -261,6 +263,123 @@ describe("LspClient waitForProjectReady", () => {
 			// then: second wait returns immediately instead of stalling again
 			expect(Date.now() - t0).toBeLessThan(200);
 		} finally {
+			harness.disposeHarness();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("#given a path containing parentheses #when server sends percent-encoded publishDiagnostics URI #then waitForProjectReady resolves immediately and diagnostics are retrievable", async () => {
+		// given
+		const root = mkdtempSync(join(tmpdir(), "pi-lsp-parens-"));
+		const harness = new ProgressHarness(root);
+		try {
+			const dir = join(root, "app", "(marketing)", "[slug]");
+			mkdirSync(dir, { recursive: true });
+			const filePath = join(dir, "page.ts");
+			writeFileSync(filePath, "const x: number = 'oops';\n");
+			// vscode-uri / typescript-language-server percent-encodes '(' and ')' where Node pathToFileURL does not
+			const encodedUri = pathToFileURL(filePath).href.replace(/\(/g, "%28").replace(/\)/g, "%29");
+
+			// when
+			const t0 = Date.now();
+			const ready = harness.waitForProjectReady(filePath);
+			await harness.serverConnection.sendNotification("textDocument/publishDiagnostics", {
+				uri: encodedUri,
+				diagnostics: [diagnostic],
+			});
+			await ready;
+
+			// then: did not stall for PROJECT_LOAD_GRACE_MS and lookup by Node's pathToFileURL finds the diagnostic
+			expect(Date.now() - t0).toBeLessThan(1_000);
+			expect(harness.getStoredDiagnostics(pathToFileURL(filePath).href)).toEqual([diagnostic]);
+		} finally {
+			harness.disposeHarness();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("#given an active $/progress token during openFile #when caller aborts #then openFile rejects promptly instead of blocking until initTimeoutMs", async () => {
+		// given
+		const root = mkdtempSync(join(tmpdir(), "pi-lsp-open-abort-"));
+		const harness = new ProgressHarness(root);
+		try {
+			const filePath = join(root, "app.ts");
+			writeFileSync(filePath, "export const x = 1;\n");
+			await harness.serverConnection.sendNotification("$/progress", {
+				token: "slow-project",
+				value: { kind: "begin", title: "Loading…" },
+			});
+			const controller = new AbortController();
+
+			// when
+			const t0 = Date.now();
+			setTimeout(() => controller.abort(), 100);
+			await expect(harness.openFile(filePath, { signal: controller.signal })).rejects.toThrow(/abort/i);
+
+			// then
+			expect(Date.now() - t0).toBeLessThan(800);
+		} finally {
+			harness.disposeHarness();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("#given an already-warmed typescript client #when context file changes on disk before workspaceSymbols #then withLspClient re-syncs didChange and didSave", async () => {
+		// given
+		const root = mkdtempSync(join(tmpdir(), "pi-lsp-resync-"));
+		mkdirSync(join(root, ".pi"), { recursive: true });
+		writeFileSync(join(root, "package.json"), "{}");
+		writeFileSync(
+			join(root, ".pi", "lsp-client.json"),
+			JSON.stringify({ lsp: { typescript: { command: ["node"], extensions: [".ts"] } } }),
+		);
+		const filePath = join(root, "app.ts");
+		writeFileSync(filePath, "export function alpha() {}\n");
+
+		const harness = new ProgressHarness(root);
+		const notifications: string[] = [];
+		harness.serverConnection.onNotification("textDocument/didChange", () => {
+			notifications.push("didChange");
+		});
+		harness.serverConnection.onNotification("textDocument/didSave", () => {
+			notifications.push("didSave");
+		});
+		harness.serverConnection.onRequest("workspace/symbol", () => []);
+
+		const manager = new LspManager({
+			clientFactory: () => {
+				harness.start = async () => {};
+				harness.initialize = async () => {};
+				return harness;
+			},
+		});
+
+		const origCwd = process.cwd();
+		process.chdir(root);
+		try {
+			// first call warms project and opens file
+			const firstCall = withLspClient(filePath, (client) => client.workspaceSymbols("alpha"), "workspaceSymbols", {
+				manager,
+			});
+			await harness.serverConnection.sendNotification("textDocument/publishDiagnostics", {
+				uri: pathToFileURL(filePath).href,
+				diagnostics: [],
+			});
+			await firstCall;
+			expect(notifications).toEqual([]);
+
+			// when: file is edited on disk and a second workspaceSymbols call runs
+			writeFileSync(filePath, "export function alpha() {}\nexport function gammaAddedLater() {}\n");
+			await withLspClient(filePath, (client) => client.workspaceSymbols("gammaAddedLater"), "workspaceSymbols", {
+				manager,
+			});
+			await new Promise((r) => setTimeout(r, 30));
+
+			// then: didChange and didSave were sent to sync the updated disk contents
+			expect(notifications).toEqual(["didChange", "didSave"]);
+		} finally {
+			process.chdir(origCwd);
+			await manager.stopAll();
 			harness.disposeHarness();
 			rmSync(root, { recursive: true, force: true });
 		}

@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared LSP server pool across sessions in one Node process that survives pi's `moduleCache: false` reloads. Pooled servers are replaced when their `.pi/lsp-client.json` config changes.
 - Prevent cold `textDocument/references` calls from returning partial/empty results while LSP server is still loading the project.
 
+### Fixed
+
+- Normalize `file://` URIs so paths with parentheses return diagnostics without stalling.
+- Re-sync context files after project load and cancel `openFile` waits on abort.
+
 ## [0.2.1] - 2026-10-31
 
 ### Changed

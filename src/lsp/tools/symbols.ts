@@ -116,7 +116,7 @@ export const lsp_symbols = defineTool({
 
 			const result = await withLspClient<Array<DocumentSymbol | SymbolInfo>>(
 				params.filePath,
-				async (client) => client.documentSymbols(params.filePath),
+				async (client) => client.documentSymbols(params.filePath, signal),
 				"documentSymbols",
 				{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 			);

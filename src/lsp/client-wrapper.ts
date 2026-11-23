@@ -14,24 +14,7 @@ import type { LspManager } from "./manager.js";
 import { getServerReadiness, isNotReadyError } from "./readiness.js";
 import { findServerForExtension } from "./server-resolution.js";
 import type { ServerLookupResult } from "./types.js";
-
-function abortableSleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (signal?.aborted) {
-			reject(signal.reason ?? new Error("Aborted"));
-			return;
-		}
-		const onAbort = () => {
-			clearTimeout(timer);
-			reject(signal?.reason ?? new Error("Aborted"));
-		};
-		const timer = setTimeout(() => {
-			signal?.removeEventListener("abort", onAbort);
-			resolve();
-		}, ms);
-		signal?.addEventListener("abort", onAbort, { once: true });
-	});
-}
+import { abortableSleep } from "./utils.js";
 
 // Self-heal a call that lands while the server's project/index is still loading
 // (the signal differs per server - see readiness.ts). Retries the same call on
@@ -129,9 +112,7 @@ export function formatServerLookupError(result: Exclude<ServerLookupResult, { st
 export interface WithLspClientOptions {
 	signal?: AbortSignal;
 	/**
-	 * The session-scoped LspManager. Required - callers should obtain it
-	 * via `getManagerForSession(ctx.sessionManager)` so each pi session
-	 * owns its own LSP server pool.
+	 * The shared LspManager resolved via `getManagerForSession(ctx.sessionManager)`.
 	 */
 	manager: LspManager;
 	/**
@@ -197,8 +178,9 @@ export async function withLspClient<T>(
 			const readiness = getServerReadiness(server.id);
 			if (readiness?.waitForProjectProgress) {
 				await client.waitForProjectReady(absPath, options.signal);
-			} else if (readiness?.requiresOpenFileToInitProject) {
-				await client.openFile(absPath);
+			}
+			if (readiness?.requiresOpenFileToInitProject) {
+				await client.openFile(absPath, options.signal ? { signal: options.signal } : undefined);
 			}
 			return await callWithNotReadyRetry(client, fn, server.id, options.signal);
 		} catch (err) {

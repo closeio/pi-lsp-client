@@ -93,7 +93,7 @@ export async function runLspDiagnostics(
 
 		const result = await withLspClient<{ items?: Diagnostic[] } | Diagnostic[] | null | undefined>(
 			params.filePath,
-			async (client) => client.diagnostics(params.filePath),
+			async (client) => client.diagnostics(params.filePath, signal),
 			"diagnostics",
 			{ manager, onUpdate, ...(signal === undefined ? {} : { signal }) },
 		);
