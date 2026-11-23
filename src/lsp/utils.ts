@@ -1,4 +1,4 @@
-import { LspProcessExitedError } from "./errors.js";
+import { isLspProcessExitedError } from "./errors.js";
 
 const RUST_SRC_REPAIR_MESSAGE = [
 	"rust-analyzer exited while loading Rust standard library sources.",
@@ -18,7 +18,7 @@ export function errorMessage(error: unknown): string {
 }
 
 export function formatKnownLspStartupFailure(error: unknown): string | null {
-	if (!(error instanceof LspProcessExitedError)) return null;
+	if (!isLspProcessExitedError(error)) return null;
 	if (error.serverId !== "rust") return null;
 
 	const details = error.stderrTail ?? error.message;

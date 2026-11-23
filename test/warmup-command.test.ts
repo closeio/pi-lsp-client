@@ -5,7 +5,7 @@ import type { ExtensionAPI, ExtensionCommandContext, RegisteredCommand } from "@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import registerExtension from "../src/index.js";
-import { disposeManagerForSession, getManagerForSession } from "../src/lsp/manager-registry.js";
+import { disposeSharedManager, getManagerForSession } from "../src/lsp/manager-registry.js";
 import type { ResolvedServer } from "../src/lsp/types.js";
 
 interface Notification {
@@ -58,7 +58,7 @@ beforeEach(() => {
 afterEach(async () => {
 	vi.restoreAllMocks();
 	vi.unstubAllEnvs();
-	await disposeManagerForSession(sessionManager);
+	await disposeSharedManager();
 	rmSync(sandbox, { recursive: true, force: true });
 });
 

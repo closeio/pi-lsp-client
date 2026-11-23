@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for `pi>1.1.0`. `pi` packages no longer export `TypeBox`. Now added
   as a peer dependency.
 - Added `promptSnippet` and `promptGuidelines` metadata to all six LSP tools so pi advertises them in the default system prompt.
+- Shared LSP server pool across sessions in one Node process that survives pi's `moduleCache: false` reloads. Pooled servers are replaced when their `.pi/lsp-client.json` config changes.
 
 ## [0.2.1] - 2026-10-31
 

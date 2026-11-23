@@ -2,8 +2,32 @@ import { LspClient } from "./client.js";
 import { IDLE_TIMEOUT_MS, INIT_TIMEOUT_MS, REAPER_INTERVAL_MS } from "./constants.js";
 import type { ResolvedServer } from "./types.js";
 
+function canonicalJson(value: unknown): string {
+	if (value === null || typeof value !== "object") {
+		return JSON.stringify(value);
+	}
+	if (Array.isArray(value)) {
+		return `[${value.map(canonicalJson).join(",")}]`;
+	}
+	const entries = Object.entries(value as Record<string, unknown>)
+		.filter(([, v]) => v !== undefined)
+		.sort(([a], [b]) => a.localeCompare(b));
+	return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+}
+
+function serverConfigFingerprint(server: ResolvedServer): string {
+	return canonicalJson({
+		command: server.command,
+		env: server.env,
+		initialization: server.initialization,
+		requestTimeoutMs: server.requestTimeoutMs,
+		initTimeoutMs: server.initTimeoutMs,
+	});
+}
+
 interface ManagedClient {
 	client: LspClient;
+	configFingerprint: string;
 	refCount: number;
 	pendingWaiters: number;
 	lastUsedAt: number;
@@ -167,7 +191,16 @@ export class LspManager {
 		signal?.throwIfAborted();
 
 		const key = this.getKey(root, server.id);
+		const configFingerprint = serverConfigFingerprint(server);
 		let managed = this.clients.get(key);
+
+		if (managed && managed.configFingerprint !== configFingerprint) {
+			if (this.clients.get(key) === managed) {
+				this.clients.delete(key);
+			}
+			await managed.client.stop().catch(() => {});
+			managed = undefined;
+		}
 
 		if (managed) {
 			const t = this.now();
@@ -176,8 +209,10 @@ export class LspManager {
 				managed.initializingSince !== null &&
 				t - managed.initializingSince > managed.initTimeoutMs
 			) {
+				if (this.clients.get(key) === managed) {
+					this.clients.delete(key);
+				}
 				await managed.client.stop().catch(() => {});
-				this.clients.delete(key);
 				managed = undefined;
 			}
 		}
@@ -201,8 +236,10 @@ export class LspManager {
 			}
 
 			if (!managed.client.isAlive()) {
+				if (this.clients.get(key) === managed) {
+					this.clients.delete(key);
+				}
 				await managed.client.stop().catch(() => {});
-				this.clients.delete(key);
 				return this.getClient(root, server, signal);
 			}
 
@@ -220,6 +257,7 @@ export class LspManager {
 
 		const newManaged: ManagedClient = {
 			client,
+			configFingerprint,
 			refCount: 0,
 			pendingWaiters: 1,
 			lastUsedAt: initStartedAt,
@@ -277,7 +315,13 @@ export class LspManager {
 	warmupClient(root: string, server: ResolvedServer): void {
 		if (this.disposed) return;
 		const key = this.getKey(root, server.id);
-		if (this.clients.has(key)) return;
+		const configFingerprint = serverConfigFingerprint(server);
+		const existing = this.clients.get(key);
+		if (existing) {
+			if (existing.configFingerprint === configFingerprint) return;
+			this.clients.delete(key);
+			existing.client.stop().catch(() => {});
+		}
 
 		const client = this.clientFactory(root, server);
 		const initStartedAt = this.now();
@@ -288,6 +332,7 @@ export class LspManager {
 
 		const managed: ManagedClient = {
 			client,
+			configFingerprint,
 			refCount: 0,
 			pendingWaiters: 0,
 			lastUsedAt: initStartedAt,
