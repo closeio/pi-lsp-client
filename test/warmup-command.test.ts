@@ -54,6 +54,7 @@ beforeEach(() => {
 	vi.stubEnv("HOME", homeDir);
 	vi.stubEnv("USERPROFILE", homeDir);
 	vi.stubEnv("PI_CODING_AGENT_DIR", join(homeDir, ".pi", "agent"));
+	vi.stubEnv("PI_LSP_CLIENT_WARMUP", "");
 });
 
 afterEach(async () => {
@@ -393,6 +394,57 @@ describe("session_start background warmup", () => {
 		const userConfigDir = join(sandbox, "home", ".pi", "agent");
 		mkdirSync(userConfigDir, { recursive: true });
 		writeFileSync(join(userConfigDir, "lsp-client.json"), JSON.stringify({ warmup: true }));
+		const warmup = vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation(() => {});
+
+		// when
+		await fireSessionStart();
+
+		// then
+		expect(warmup).toHaveBeenCalledTimes(1);
+	});
+
+	it("#given PI_LSP_CLIENT_WARMUP=1 and no warmup option in config #when session_start fires #then warms up", async () => {
+		// given
+		writeTypescriptProject();
+		writeFileSync(
+			join(projectDir, ".pi", "lsp-client.json"),
+			JSON.stringify({ lsp: { typescript: { command: ["node"], extensions: [".ts"] } } }),
+		);
+		vi.stubEnv("PI_LSP_CLIENT_WARMUP", "1");
+		const warmup = vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation(() => {});
+
+		// when
+		await fireSessionStart();
+
+		// then
+		expect(warmup).toHaveBeenCalledTimes(1);
+	});
+
+	it("#given PI_LSP_CLIENT_WARMUP=false and warmup true in project config #when session_start fires #then env wins and does not warm up", async () => {
+		// given
+		writeTypescriptProject();
+		writeFileSync(
+			join(projectDir, ".pi", "lsp-client.json"),
+			JSON.stringify({ warmup: true, lsp: { typescript: { command: ["node"], extensions: [".ts"] } } }),
+		);
+		vi.stubEnv("PI_LSP_CLIENT_WARMUP", "false");
+		const warmup = vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation(() => {});
+
+		// when
+		await fireSessionStart();
+
+		// then
+		expect(warmup).not.toHaveBeenCalled();
+	});
+
+	it("#given an unrecognized PI_LSP_CLIENT_WARMUP value #when session_start fires #then falls back to config", async () => {
+		// given
+		writeTypescriptProject();
+		writeFileSync(
+			join(projectDir, ".pi", "lsp-client.json"),
+			JSON.stringify({ warmup: true, lsp: { typescript: { command: ["node"], extensions: [".ts"] } } }),
+		);
+		vi.stubEnv("PI_LSP_CLIENT_WARMUP", "yes please");
 		const warmup = vi.spyOn(getManagerForSession(sessionManager), "warmupClient").mockImplementation(() => {});
 
 		// when

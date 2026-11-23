@@ -190,6 +190,8 @@ For backward compatibility, an old `~/.pi/lsp-client.json` is still read if the 
 
 Set `"warmup": true` at the top level of the config to warm the workspace's primary language server in the background on `session_start` (see [Lifecycle](#lifecycle)). It is off by default. Project config wins over user config, so a project can set `"warmup": false` to opt out of a user-level `true`.
 
+The `PI_LSP_CLIENT_WARMUP` environment variable overrides both config files: `1` or `true` turns warmup on and `0` or `false` turns it off. Any other value, or leaving it unset, falls back to the config. This lets a script that launches `pi` turn warmup on without writing a config file into the workspace.
+
 `disabled: true` removes a builtin server from resolution. Project config wins over user config. Builtins are the lowest priority (only used when no project/user override exists).
 
 `requestTimeoutMs` and `initTimeoutMs` override the global `REQUEST_TIMEOUT_MS` / `INIT_TIMEOUT_MS` defaults (15s / 60s) for that one server only. Values must be positive numbers of milliseconds; anything else is ignored and the default applies. The config file is parsed as plain JSON, so comments are not allowed. Useful for servers whose `initialize` handshake does real project analysis (e.g. `kotlin-language-server` importing a large Gradle multi-module project) and routinely exceeds the defaults on some workspaces but not others.
@@ -197,7 +199,7 @@ Set `"warmup": true` at the top level of the config to warm the workspace's prim
 ## Lifecycle
 
 - **Process-wide shared pool.** Sessions in the same Node process share one `LspManager` stored under `globalThis[Symbol.for("pi-lsp-client.shared-pool.v1")]` (surviving pi's per-session `moduleCache: false` reloads). Servers are keyed by `(root, serverId)` and refcounted per call.
-- **Opt-in background warmup on `session_start`.** With `"warmup": true` in `.pi/lsp-client.json`, `session_start` finds the workspace's primary language and warms its server in the background with a seed source file. A large TypeScript project can take 30+ seconds and several GB to load, so this is off by default and servers spawn lazily on the first tool call.
+- **Opt-in background warmup on `session_start`.** With `"warmup": true` in `.pi/lsp-client.json` (or `PI_LSP_CLIENT_WARMUP=1`), `session_start` finds the workspace's primary language and warms its server in the background with a seed source file. A large TypeScript project can take 30+ seconds and several GB to load, so this is off by default and servers spawn lazily on the first tool call.
 - **Project-load readiness (`$/progress`).** `initialize` advertises `window.workDoneProgress`. For lazy-project servers (`typescript`, `vtsls`), `waitForProjectReady()` opens a seed file and waits for the server's `$/progress` project load to finish (or initial `publishDiagnostics` on inferred projects) so the first navigation query does not return empty partial results.
 - **Refcount.** Each `withLspClient(...)` call increments refCount on entry and decrements in `finally`. Idle reaping fires only when refCount hits zero AND lastUsedAt is older than the idle timeout.
 - **Idle timeout: 5 minutes.** Idle clients are stopped and removed from the pool.
