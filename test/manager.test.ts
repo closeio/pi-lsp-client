@@ -414,6 +414,41 @@ describe("LspManager", () => {
 		await manager.stopAll();
 	});
 
+	it("#given typescript warmup with seed file #when project load outlives initTimeoutMs #then reaper and getClient do not kill the warm client", async () => {
+		// given
+		vi.useFakeTimers();
+		try {
+			const { manager, clients, now } = setupManager({
+				idleTimeoutMs: 5_000,
+				initTimeoutMs: 1_000,
+				reaperIntervalMs: 100,
+				clientFactoryOptions: () => ({ waitForProjectReadyDelayMs: 60_000 }),
+			});
+			const server = makeServer("typescript", [".ts"]);
+
+			// when: warmup completes start() + initialize(), then enters background project load
+			manager.warmupClient("/root/a", server, "/root/a/src/index.ts");
+			await vi.advanceTimersByTimeAsync(0);
+			expect(manager.isServerInitializing("/root/a", "typescript")).toBe(false);
+			expect(firstClient(clients).waitForProjectReadyCallCount).toBe(1);
+			expect(firstClient(clients).waitForProjectReadySeedFiles).toEqual(["/root/a/src/index.ts"]);
+
+			// advance past both initTimeoutMs and idleTimeoutMs while project load is still running
+			now.value += 10_000;
+			vi.advanceTimersByTime(150);
+
+			// then: neither reaper nor getClient kills the warming server
+			expect(firstClient(clients).stopCallCount).toBe(0);
+			const client = await manager.getClient("/root/a", server);
+			expect(client).toBe(firstClient(clients));
+			expect(clients).toHaveLength(1);
+
+			await manager.stopAll();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("#given pooled client with old config #when getClient or warmupClient sees changed config #then evicts old client and spawns a fresh one", async () => {
 		// given
 		const { manager, clients } = setupManager();

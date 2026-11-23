@@ -4,6 +4,7 @@ import type { ResolvedServer } from "../../src/lsp/types.js";
 export interface FakeLspClientOptions {
 	startDelayMs?: number;
 	initDelayMs?: number;
+	waitForProjectReadyDelayMs?: number;
 	failStart?: boolean;
 	failInitialize?: boolean;
 	stopDelayMs?: number;
@@ -16,6 +17,8 @@ export class FakeLspClient extends LspClient {
 	initializeCallCount = 0;
 	stopCallCount = 0;
 	killSyncCallCount = 0;
+	waitForProjectReadyCallCount = 0;
+	waitForProjectReadySeedFiles: string[] = [];
 
 	constructor(
 		root: string,
@@ -45,6 +48,14 @@ export class FakeLspClient extends LspClient {
 		if (this.opts.failInitialize) {
 			this.aliveFlag = false;
 			throw new Error("fake initialize failed");
+		}
+	}
+
+	override async waitForProjectReady(seedFilePath: string, _signal?: AbortSignal): Promise<void> {
+		this.waitForProjectReadyCallCount++;
+		this.waitForProjectReadySeedFiles.push(seedFilePath);
+		if (this.opts.waitForProjectReadyDelayMs !== undefined) {
+			await new Promise((r) => setTimeout(r, this.opts.waitForProjectReadyDelayMs));
 		}
 	}
 
